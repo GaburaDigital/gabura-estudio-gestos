@@ -1,0 +1,25 @@
+{
+  "name": "gabura-estudio-gestos",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Estúdio de Gestos Gabura: grava, repete e testa gestos no Meta Quest (VR) e sequências de teclado e mouse (PC), para qualquer jogo.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "qrcode": "node testes/gerar_qrcode.mjs"
+  },
+  "dependencies": {
+    "fflate": "0.8.2",
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.170.0",
+    "@types/webxr": "0.5.20",
+    "qrcode": "1.5.4",
+    "typescript": "5.7.3",
+    "vite": "6.0.7"
+  }
+}

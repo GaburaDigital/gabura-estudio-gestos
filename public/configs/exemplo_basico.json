@@ -1,0 +1,65 @@
+{
+  "versao_formato": 1,
+  "projeto": "exemplo_basico",
+  "nome": { "pt": "Exemplo básico", "en": "Basic example" },
+  "personagem": {
+    "id": "robo_exemplo",
+    "nome": { "pt": "Robô de exemplo", "en": "Example robot" },
+    "aparencia": {
+      "altura": 1.5,
+      "proporcoes": { "cabeca": 1.4, "ombros": 1.1, "bracos": 1, "pernas": 0.9, "tronco": 1 },
+      "cores": { "corpo": "#5aa7b8", "frente": "#d8eef2", "detalhe": "#ffe066", "maos": "#3f7f8f" },
+      "acessorios": ["antenas", "oculos", "barriga"],
+      "maos": "maos"
+    }
+  },
+  "gravacao": { "repeticoes": 5, "contagem": 3, "duracao_padrao": 2.5 },
+  "blocos": [
+    {
+      "id": "simples",
+      "nome": { "pt": "Gestos simples", "en": "Simple gestures" },
+      "acoes": [
+        {
+          "id": "acenar", "nome": { "pt": "Acenar", "en": "Wave" }, "tipo": "gesto", "maos": "uma",
+          "partes": [{ "id": "gesto", "nome": { "pt": "Acenar", "en": "Wave" },
+            "sugestao": { "pt": "Mão aberta acima do ombro, balançando de um lado para o outro 3 vezes.", "en": "Open hand above the shoulder, waving side to side 3 times." },
+            "sugestao_pc": { "pt": "Mouse para a esquerda e para a direita, rápido.", "en": "Mouse left and right, fast." } }],
+          "efeito": { "forma": "brilho", "cor": "#ffe066", "origem": "mao_dir" }
+        },
+        {
+          "id": "palmas", "nome": { "pt": "Palmas", "en": "Clap" }, "tipo": "gesto", "maos": "duas",
+          "partes": [{ "id": "gesto", "nome": { "pt": "Palma", "en": "Clap" }, "duracao": 1.5,
+            "sugestao": { "pt": "Uma palma forte na frente do peito.", "en": "One strong clap in front of the chest." },
+            "sugestao_pc": { "pt": "Clique com os dois botões do mouse.", "en": "Click both mouse buttons." } }],
+          "efeito": { "forma": "onda", "cor": "#4fd6d0", "origem": "maos" }
+        },
+        {
+          "id": "bracos_para_cima", "nome": { "pt": "Vitória", "en": "Victory" }, "tipo": "modo", "maos": "duas",
+          "partes": [{ "id": "gesto", "nome": { "pt": "Braços para cima", "en": "Arms up" },
+            "sugestao": { "pt": "Levante os dois braços bem alto e segure um instante.", "en": "Raise both arms high and hold for a moment." },
+            "sugestao_pc": { "pt": "Segure Espaço e aperte W.", "en": "Hold Space and press W." } }],
+          "efeito": { "forma": "aura", "cor": "#8fd651", "origem": "corpo" }
+        }
+      ]
+    },
+    {
+      "id": "poderes",
+      "nome": { "pt": "Poderes (engatilhar e liberar)", "en": "Powers (charge and release)" },
+      "acoes": [
+        {
+          "id": "bola_de_energia", "nome": { "pt": "Bola de energia", "en": "Energy ball" }, "tipo": "ataque", "maos": "duas", "tempo_maximo": 5,
+          "partes": [
+            { "id": "engatilhar", "nome": { "pt": "Engatilhar", "en": "Charge" },
+              "sugestao": { "pt": "Junte as mãos ao lado da cintura, como se segurasse uma bola, e aperte os dois gatilhos.", "en": "Bring your hands together at your waist, as if holding a ball, and squeeze both triggers." },
+              "sugestao_pc": { "pt": "Segure Q por um instante.", "en": "Hold Q for a moment." } },
+            { "id": "liberar", "nome": { "pt": "Liberar", "en": "Release" }, "duracao": 1.5,
+              "sugestao": { "pt": "Empurre as duas mãos para a frente e solte os gatilhos.", "en": "Push both hands forward and release the triggers." },
+              "sugestao_pc": { "pt": "Clique com o botão esquerdo.", "en": "Left click." } }
+          ],
+          "condicoes": { "pt": "Só depois de engatilhar; vale por 5 segundos.", "en": "Only after charging; lasts 5 seconds." },
+          "efeito": { "forma": "projetil", "cor": "#c58fff", "origem": "maos" }
+        }
+      ]
+    }
+  ]
+}

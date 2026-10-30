@@ -1,0 +1,55 @@
+/* Estilo da página do Estúdio de Gestos: escuro (bom no Quest e no PC), letras grandes e botões altos para o
+   laser do controle. Fontes do sistema (nada baixado da internet). */
+:root {
+  --fundo: #0c1a24; --painel: #12252f; --painel2: #183240; --linha: #24414f;
+  --texto: #e8f3f2; --suave: #9fb3bd; --destaque: #4fd6d0; --amarelo: #ffe066; --vermelho: #ff6b5b; --verde: #8fd651; --roxo: #c58fff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); background: var(--fundo);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--fundo); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { background: var(--painel2); border: 1px solid var(--linha); border-radius: 10px; padding: 9px 14px; cursor: pointer; min-height: 42px; }
+button:hover:not(:disabled) { border-color: var(--destaque); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.principal { background: var(--destaque); color: #0c1a24; font-weight: 800; border-color: var(--destaque); }
+button.perigo { color: var(--vermelho); }
+#app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--linha); background: var(--painel); }
+header h1 { font-size: 20px; margin: 0 8px 0 0; color: var(--destaque); }
+header .sub { color: var(--suave); font-size: 13px; flex: 1 1 260px; }
+.modos { display: flex; border: 1px solid var(--linha); border-radius: 12px; overflow: hidden; }
+.modos label { padding: 9px 14px; cursor: pointer; font-weight: 700; }
+.modos input { display: none; }
+.modos label:has(input:checked) { background: var(--destaque); color: #0c1a24; }
+main { display: grid; grid-template-columns: minmax(230px, 300px) 1fr minmax(300px, 380px); min-height: 0; }
+#lista { overflow: auto; border-right: 1px solid var(--linha); padding: 8px; }
+#lista h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--suave); margin: 14px 6px 6px; }
+.item { display: block; width: 100%; text-align: left; margin: 3px 0; padding: 8px 10px; border-radius: 10px; background: transparent; border: 1px solid transparent; min-height: 0; }
+.item.ativo { background: var(--painel2); border-color: var(--destaque); }
+.item .nome { font-weight: 700; }
+.item .info { color: var(--suave); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.ponto { display: inline-block; padding: 1px 7px; border-radius: 99px; background: #2a3d48; font-size: 12px; }
+.ponto.cheio { background: var(--verde); color: #0c1a24; }
+#palco { position: relative; min-width: 0; min-height: 0; }
+#palco canvas { display: block; width: 100%; height: 100%; }
+#aviso3d { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(12,26,36,0.88); border: 1px solid var(--linha); padding: 10px 18px; border-radius: 12px; font-weight: 800; font-size: 22px; pointer-events: none; text-align: center; }
+#aviso3d:empty { display: none; }
+#opcoes3d { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 12px; background: rgba(12,26,36,0.8); padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+#detalhe { overflow: auto; border-left: 1px solid var(--linha); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+#detalhe h2 { margin: 0; font-size: 24px; }
+.etiquetas { display: flex; gap: 6px; flex-wrap: wrap; }
+.etiqueta { font-size: 12px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--linha); color: var(--suave); }
+.abas { display: flex; gap: 6px; flex-wrap: wrap; }
+.abas button.ativo { border-color: var(--destaque); color: var(--destaque); }
+.caixa { background: var(--painel); border: 1px solid var(--linha); border-radius: 12px; padding: 10px 12px; }
+.caixa b { color: var(--suave); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 4px; }
+.tentativa { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.tentativa span { flex: 1; color: var(--suave); font-size: 13px; }
+.tentativa button { min-height: 34px; padding: 4px 10px; }
+textarea { width: 100%; min-height: 90px; background: var(--painel2); border: 1px solid var(--linha); border-radius: 10px; padding: 8px; resize: vertical; }
+input[type=range] { width: 100%; }
+.linha { display: flex; gap: 8px; flex-wrap: wrap; }
+.suave { color: var(--suave); font-size: 13px; }
+.erro { color: var(--vermelho); font-weight: 700; }
+#vazio { padding: 40px; color: var(--suave); font-size: 18px; max-width: 520px; }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; } #lista, #detalhe { border: none; } }
