@@ -31,19 +31,38 @@ juntar o trabalho do Quest com o do PC: **Importar gestos (.zip)** junta as grav
 
 ### No Quest (dentro do VR)
 
-O painel fica à esquerda e o boneco à frente, imitando você como um espelho.
+O menu fica à esquerda e o boneco à frente, imitando você como um espelho.
 
 | Controle | O que faz |
 |---|---|
-| Analógico direito ↑ ↓ | escolhe a ação |
-| Analógico direito ← → | escolhe a parte (por exemplo, engatilhar e liberar) |
-| A | grava (contagem 3, 2, 1) |
-| B | apaga a última gravação desta parte |
-| X | revê as gravações desta parte no boneco |
-| Y | liga e desliga o modo testar |
+| Analógico direito ↑ ↓ | escolhe a linha do menu |
+| Analógico direito ← → | muda o valor da linha (o que conta, tempo, segurar, tolerância…) |
+| A | confirma (abre a ação, o gesto, grava…) |
+| B | volta |
+| Segurar Y por 1 s | volta ao começo de qualquer lugar (também cancela uma gravação ou para o teste) |
 
-Durante a contagem e a gravação, todos os botões fazem parte do gesto. As observações e a tolerância se
-editam na página (no Quest, antes de entrar no VR, ou no PC depois de importar o zip).
+Durante a contagem e a gravação, **A e X podem fazer parte do gesto** (a palma do boneco muda de cor quando você
+aperta). B e Y nunca entram num gesto.
+
+Telas do menu: **começo** (as ações e a biblioteca de preparações) → **ação** (os passos: engatilhar, preparações,
+liberar e as alternativas) → **gesto** (gravar, rever, apagar a última e os ajustes). No **teste**, o medidor mostra
+o quanto cada gesto está perto de disparar; ← → muda a tolerância do gesto da linha.
+
+### Ajustes de cada gesto
+
+- **O que conta:** mão direita, mão esquerda, duas mãos, mão + cabeça, cabeça ou o corpo todo. O resto é ignorado.
+- **Vale com a outra mão:** o gesto gravado com uma mão também vale feito com a outra (espelhado).
+- **Tempo de gravação:** de 0,5 a 8 s.
+- **Segurar a pose:** de 0 a 2 s (0 = basta passar pela pose).
+- **Tolerância:** maior = mais fácil de reconhecer.
+
+### Preparações e carga
+
+- Uma **preparação** (ex.: cotovelo levantado antes do soco) é gravada uma vez e pode ser posta em várias ações,
+  antes de liberar. Regravar uma preparação muda em todas as ações que a usam.
+- **Carga:** o engatilhar é gravado como um ciclo só; no teste, repetir o ciclo aumenta a carga (o painel mostra o número).
+- **Alternativas:** um passo pode ter jeitos diferentes (ex.: o soco furadeira libera como jab, gancho ou impulso), cada um gravado separado e com a própria direção do poder.
+- No teste, todo poder mostra uma **seta com a direção** (pulso, apontar, cabeça, movimento, frente, cima ou baixo).
 
 ### No PC
 

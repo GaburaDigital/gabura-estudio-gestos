@@ -1,9 +1,12 @@
-// Arquivo de configuração de um projeto (o "arquivo de ações" que o autor importa no Estúdio).
-// Ele diz quais ações gravar, em quantas partes (ex.: engatilhar e liberar), dicas de como fazer, condições,
-// o efeito que aparece no modo testar e a aparência do boneco. O formato está explicado em CONFIGURACAO.md.
+// Arquivo de ações (configuração) de um projeto: o que gravar, como cada gesto é reconhecido e o que o poder faz
+// no modo testar. O formato está explicado em CONFIGURACAO.md.
 //
-// O arquivo vem de fora (outro projeto, outra pessoa): tudo é conferido numa lista fechada de campos e valores.
-// Nada do arquivo vira código executado; textos são só mostrados.
+// Versão 2 (C35): os gestos ficam numa biblioteca e as ações usam os gestos pelo nome. Assim a mesma preparação
+// (ex.: cotovelo levantado) ou o mesmo engatilhar serve para várias ações e é gravado uma vez só.
+// Uma ação é uma sequência de passos (engatilhar, preparar, liberar…); um passo pode ter alternativas (ex.: a
+// furadeira libera de três jeitos). A versão 1 continua aceita: é convertida ao abrir.
+//
+// O arquivo vem de fora: tudo é conferido numa lista fechada de campos e valores. Nada vira código executado.
 
 export type Modo = 'vr' | 'pc';
 export type Lingua = 'pt' | 'en';
@@ -11,41 +14,54 @@ export interface Texto { pt: string; en: string }
 
 export const TIPOS_ACAO = ['ataque', 'modo', 'combo', 'gesto'] as const;
 export type TipoAcao = typeof TIPOS_ACAO[number];
-export const MAOS = ['uma', 'duas', 'qualquer'] as const;
-export type Maos = typeof MAOS[number];
-export const FORMAS_EFEITO = ['tornado', 'raio', 'onda', 'aura', 'projetil', 'explosao', 'brilho', 'lamina'] as const;
+export const TIPOS_GESTO = ['parte', 'preparacao'] as const;
+export type TipoGesto = typeof TIPOS_GESTO[number];
+/** O que conta no reconhecimento: o resto do corpo é ignorado. */
+export const CONTA = ['mao_dir', 'mao_esq', 'duas_maos', 'mao_cabeca', 'cabeca', 'corpo'] as const;
+export type Conta = typeof CONTA[number];
+export const FORMAS_EFEITO = ['broca', 'tornado', 'raio', 'onda', 'aura', 'projetil', 'explosao', 'brilho', 'lamina'] as const;
 export type FormaEfeito = typeof FORMAS_EFEITO[number];
-export const ORIGENS_EFEITO = ['mao_dir', 'mao_esq', 'maos', 'boca', 'corpo', 'chao'] as const;
+/** De onde o poder sai. "mao" = a mão que fez o gesto (direita ou esquerda, se valeu espelhado). */
+export const ORIGENS_EFEITO = ['mao', 'mao_dir', 'mao_esq', 'maos', 'boca', 'corpo', 'chao'] as const;
 export type OrigemEfeito = typeof ORIGENS_EFEITO[number];
+/** Para onde o poder vai: pulso (para onde o punho aponta), apontar (a mão esticada), cabeça (para onde olha,
+ *  um pouco abaixo dos olhos), movimento (a direção do golpe no disparo), frente (frente do corpo), cima, baixo. */
+export const DIRECOES = ['pulso', 'apontar', 'cabeca', 'movimento', 'frente', 'cima', 'baixo'] as const;
+export type Direcao = typeof DIRECOES[number];
 export const ACESSORIOS = ['orelhas_redondas', 'orelhas_pontudas', 'focinho', 'oculos', 'cauda', 'mochila', 'antenas', 'chifres', 'barriga'] as const;
 export type Acessorio = typeof ACESSORIOS[number];
 
-export interface Parte {
-  id: string;
-  nome: Texto;
-  /** Como fazer (sugestão do projeto; quem grava decide o gesto de verdade). */
-  sugestao: Texto;
-  /** Sugestão para o modo PC (teclas e mouse), se for diferente. */
-  sugestao_pc: Texto | null;
-  /** Segundos de gravação depois da contagem. */
+export interface AjustesGesto {
+  conta: Conta;
+  /** Vale feito com a outra mão (espelhado). */
+  espelhado: boolean;
+  /** Segundos de gravação. */
   duracao: number;
+  /** Segundos que a pose final precisa ser segurada (0 = basta passar por ela). */
+  segurar: number;
+  /** Multiplica o limite do reconhecimento (maior = mais fácil). */
+  tolerancia: number;
 }
+/** `editado`: os ajustes ou o nome foram mudados no Estúdio (continuam quando o arquivo de ações é importado de novo). */
+export interface Gesto { id: string; nome: Texto; tipo: TipoGesto; sugestao: Texto; sugestao_pc: Texto | null; ajustes: AjustesGesto; editado?: boolean }
+export interface Efeito { forma: FormaEfeito; cor: string; origem: OrigemEfeito; direcao: Direcao; duracao: number }
+export interface Alternativa { id: string; nome: Texto; gesto: string; efeito: Efeito | null }
+export interface Passo { id: string; nome: Texto; alternativas: Alternativa[] }
+/** Carga por ciclos: o gesto do passo é repetido; cada repetição aumenta a carga (até o máximo). */
+export interface Carga { passo: string; minimo: number; maximo: number; niveis: { ciclos: number; nome: Texto }[] }
 export interface Acao {
-  id: string;
-  nome: Texto;
-  tipo: TipoAcao;
-  maos: Maos;
-  partes: Parte[];
+  id: string; nome: Texto; tipo: TipoAcao;
+  passos: Passo[];
   condicoes: Texto | null;
   opcional: boolean;
   plataformas: Modo[];
-  efeito: { forma: FormaEfeito; cor: string; origem: OrigemEfeito };
-  /** Ataque engatilhado: tempo máximo (s) entre a última parte engatilhada e a liberação. */
+  efeito: Efeito;
+  /** Segundos que a ação fica engatilhada esperando o próximo passo (contados do último passo ou ciclo). */
   tempo_maximo: number;
+  carga: Carga | null;
 }
 export interface Bloco { id: string; nome: Texto; acoes: Acao[] }
 export interface Aparencia {
-  /** Altura do personagem em metros (o boneco é desenhado nesse tamanho). */
   altura: number;
   proporcoes: { cabeca: number; ombros: number; bracos: number; pernas: number; tronco: number };
   cores: { corpo: string; frente: string; detalhe: string; maos: string };
@@ -53,11 +69,12 @@ export interface Aparencia {
   maos: 'maos' | 'patas';
 }
 export interface Configuracao {
-  versao_formato: 1;
+  versao_formato: 2;
   projeto: string;
   nome: Texto;
   personagem: { id: string; nome: Texto; aparencia: Aparencia };
   gravacao: { repeticoes: number; contagem: number; duracao_padrao: number };
+  gestos: Gesto[];
   blocos: Bloco[];
 }
 
@@ -68,6 +85,8 @@ export const APARENCIA_CINZA: Aparencia = {
   acessorios: [],
   maos: 'maos',
 };
+export const AJUSTES_PADRAO: AjustesGesto = { conta: 'corpo', espelhado: false, duracao: 2.5, segurar: 0, tolerancia: 1 };
+export const LIMITES = { duracao: [0.5, 8], segurar: [0, 2], tolerancia: [0.5, 2] } as const;
 
 // ---------------- conferência ----------------
 const ID = /^[a-z0-9_]{1,40}$/;
@@ -85,8 +104,9 @@ function lista(v: unknown, onde: string, max: number): unknown[] {
   if (v.length > max) throw new ErroConfig(`${onde}: no máximo ${max} itens`);
   return v;
 }
+export function idValido(v: unknown): v is string { return typeof v === 'string' && ID.test(v); }
 function id(v: unknown, onde: string): string {
-  if (typeof v !== 'string' || !ID.test(v)) throw new ErroConfig(`${onde}: id inválido (use letras minúsculas, números e _, sem acentos)`);
+  if (!idValido(v)) throw new ErroConfig(`${onde}: id inválido (use letras minúsculas, números e _, sem acentos)`);
   return v;
 }
 function numero(v: unknown, onde: string, min: number, max: number, padrao?: number): number {
@@ -104,7 +124,6 @@ function escolha<X extends string>(v: unknown, opcoes: readonly X[], onde: strin
   if (typeof v !== 'string' || !(opcoes as readonly string[]).includes(v)) throw new ErroConfig(`${onde}: use um de ${opcoes.join(', ')}`);
   return v as X;
 }
-/** Texto em PT e EN. Aceita uma string só (vale para as duas línguas). */
 function texto(v: unknown, onde: string, opcional = false): Texto | null {
   if (v === undefined || v === null) { if (opcional) return null; throw new ErroConfig(`${onde}: falta o texto`); }
   const limpo = (s: unknown, l: string) => {
@@ -117,10 +136,33 @@ function texto(v: unknown, onde: string, opcional = false): Texto | null {
   return { pt, en: limpo(o.en ?? pt, 'en') };
 }
 
-/** Confere o arquivo de configuração e devolve a versão limpa (com os valores padrão preenchidos). */
+export function conferirAjustes(v: unknown, onde: string, padrao: AjustesGesto): AjustesGesto {
+  const o = v === undefined ? {} : objeto(v, onde);
+  return {
+    conta: escolha(o.conta, CONTA, onde + '.conta', padrao.conta),
+    espelhado: o.espelhado === undefined ? padrao.espelhado : o.espelhado === true,
+    duracao: numero(o.duracao, onde + '.duracao', LIMITES.duracao[0], LIMITES.duracao[1], padrao.duracao),
+    segurar: numero(o.segurar, onde + '.segurar', LIMITES.segurar[0], LIMITES.segurar[1], padrao.segurar),
+    tolerancia: numero(o.tolerancia, onde + '.tolerancia', LIMITES.tolerancia[0], LIMITES.tolerancia[1], padrao.tolerancia),
+  };
+}
+
+function conferirEfeito(v: unknown, onde: string, padrao?: Efeito): Efeito {
+  const o = v === undefined ? {} : objeto(v, onde);
+  const p = padrao ?? { forma: 'brilho', cor: '#4fd6d0', origem: 'maos', direcao: 'frente', duracao: 1 };
+  return {
+    forma: escolha(o.forma, FORMAS_EFEITO, onde + '.forma', p.forma),
+    cor: cor(o.cor, onde + '.cor', p.cor),
+    origem: escolha(o.origem, ORIGENS_EFEITO, onde + '.origem', p.origem),
+    direcao: escolha(o.direcao, DIRECOES, onde + '.direcao', p.direcao),
+    duracao: numero(o.duracao, onde + '.duracao', 0.3, 6, p.duracao),
+  };
+}
+
+/** Confere o arquivo de ações (versão 1 ou 2) e devolve a versão 2 limpa, com os valores padrão preenchidos. */
 export function conferirConfig(bruto: unknown): Configuracao {
   const o = objeto(bruto, 'arquivo');
-  if (o.versao_formato !== 1) throw new ErroConfig('versao_formato: este Estúdio lê a versão 1');
+  if (o.versao_formato !== 1 && o.versao_formato !== 2) throw new ErroConfig('versao_formato: este Estúdio lê as versões 1 e 2');
   const g = o.gravacao === undefined ? {} : objeto(o.gravacao, 'gravacao');
   const gravacao = {
     repeticoes: Math.round(numero(g.repeticoes, 'gravacao.repeticoes', 1, 10, 5)),
@@ -128,56 +170,117 @@ export function conferirConfig(bruto: unknown): Configuracao {
     duracao_padrao: numero(g.duracao_padrao, 'gravacao.duracao_padrao', 0.5, 8, 2.5),
   };
   const p = objeto(o.personagem ?? { id: 'boneco', nome: 'Boneco' }, 'personagem');
+  const gestos = new Map<string, Gesto>();
+  const padraoGesto = { ...AJUSTES_PADRAO, duracao: gravacao.duracao_padrao };
+  if (o.versao_formato === 2 && o.gestos !== undefined) {
+    lista(o.gestos, 'gestos', 300).forEach((x, i) => {
+      const go = objeto(x, `gestos[${i}]`), gid = id(go.id, `gestos[${i}].id`);
+      if (gestos.has(gid)) throw new ErroConfig(`gestos: "${gid}" repetido`);
+      gestos.set(gid, {
+        id: gid, nome: texto(go.nome ?? gid, `gestos[${i}].nome`)!, tipo: escolha(go.tipo, TIPOS_GESTO, `gestos[${i}].tipo`, 'parte'),
+        sugestao: texto(go.sugestao ?? '', `gestos[${i}].sugestao`)!, sugestao_pc: texto(go.sugestao_pc, `gestos[${i}].sugestao_pc`, true),
+        ajustes: conferirAjustes(go.ajustes, `gestos[${i}].ajustes`, padraoGesto),
+        ...(go.editado === true ? { editado: true } : {}),
+      });
+    });
+  }
   const ids = new Set<string>();
   const blocos = lista(o.blocos, 'blocos', 30).map((b, i) => {
     const bo = objeto(b, `blocos[${i}]`);
     const bid = id(bo.id, `blocos[${i}].id`);
     return {
       id: bid, nome: texto(bo.nome, `blocos[${i}].nome`)!,
-      acoes: lista(bo.acoes, `blocos[${i}].acoes`, 60).map((a, j) => conferirAcao(a, `${bid}.acoes[${j}]`, gravacao.duracao_padrao, ids)),
+      acoes: lista(bo.acoes, `blocos[${i}].acoes`, 60).map((a, j) => o.versao_formato === 1
+        ? acaoDaVersao1(a, `${bid}.acoes[${j}]`, padraoGesto, ids, gestos)
+        : conferirAcao(a, `${bid}.acoes[${j}]`, ids, gestos)),
     };
   });
   if (!blocos.some((b) => b.acoes.length)) throw new ErroConfig('blocos: nenhuma ação para gravar');
   return {
-    versao_formato: 1,
-    projeto: id(o.projeto, 'projeto'),
-    nome: texto(o.nome ?? o.projeto, 'nome')!,
+    versao_formato: 2, projeto: id(o.projeto, 'projeto'), nome: texto(o.nome ?? o.projeto, 'nome')!,
     personagem: { id: id(p.id ?? 'boneco', 'personagem.id'), nome: texto(p.nome ?? 'Boneco', 'personagem.nome')!, aparencia: conferirAparencia(p.aparencia) },
-    gravacao, blocos,
+    gravacao, gestos: [...gestos.values()], blocos,
   };
 }
 
-function conferirAcao(a: unknown, onde: string, duracaoPadrao: number, ids: Set<string>): Acao {
-  const o = objeto(a, onde);
-  const aid = id(o.id, onde + '.id');
-  if (ids.has(aid)) throw new ErroConfig(`${onde}.id: "${aid}" repetido`);
-  ids.add(aid);
-  const partesBrutas = o.partes === undefined ? [{ id: 'gesto', nome: { pt: 'Gesto', en: 'Gesture' }, sugestao: o.sugestao ?? '' }] : lista(o.partes, onde + '.partes', 4);
-  if (!partesBrutas.length) throw new ErroConfig(onde + '.partes: pelo menos uma parte');
+function plataformasDe(v: unknown, onde: string): Modo[] {
+  return v === undefined ? ['vr', 'pc'] : [...new Set(lista(v, onde, 2).map((x) => escolha(x, ['vr', 'pc'] as const, onde)))];
+}
+
+function conferirAcao(a: unknown, onde: string, ids: Set<string>, gestos: Map<string, Gesto>): Acao {
+  const o = objeto(a, onde), aid = id(o.id, onde + '.id');
+  if (ids.has(aid)) throw new ErroConfig(`${onde}.id: "${aid}" repetido`); ids.add(aid);
+  const efeito = conferirEfeito(o.efeito, onde + '.efeito');
   const pids = new Set<string>();
-  const partes = partesBrutas.map((pb, k) => {
-    const po = objeto(pb, `${onde}.partes[${k}]`);
-    const pid = id(po.id, `${onde}.partes[${k}].id`);
-    if (pids.has(pid)) throw new ErroConfig(`${onde}.partes: "${pid}" repetido`); pids.add(pid);
+  const passos = lista(o.passos, onde + '.passos', 6).map((pb, k): Passo => {
+    const po = objeto(pb, `${onde}.passos[${k}]`), pid = id(po.id, `${onde}.passos[${k}].id`);
+    if (pids.has(pid)) throw new ErroConfig(`${onde}.passos: "${pid}" repetido`); pids.add(pid);
+    // um passo usa um gesto ("gesto") ou tem alternativas (qualquer uma vale)
+    const alts = po.alternativas === undefined ? [{ id: pid, nome: po.nome ?? pid, gesto: po.gesto }] : lista(po.alternativas, `${onde}.passos[${k}].alternativas`, 6);
+    if (!alts.length) throw new ErroConfig(`${onde}.passos[${k}]: sem gesto`);
+    const aids = new Set<string>();
     return {
-      id: pid, nome: texto(po.nome ?? pid, `${onde}.partes[${k}].nome`)!,
-      sugestao: texto(po.sugestao ?? '', `${onde}.partes[${k}].sugestao`)!,
-      sugestao_pc: texto(po.sugestao_pc, `${onde}.partes[${k}].sugestao_pc`, true),
-      duracao: numero(po.duracao, `${onde}.partes[${k}].duracao`, 0.5, 8, duracaoPadrao),
+      id: pid, nome: texto(po.nome ?? pid, `${onde}.passos[${k}].nome`)!,
+      alternativas: alts.map((x, m) => {
+        const xo = objeto(x, `${onde}.passos[${k}].alternativas[${m}]`), xid = id(xo.id, `${onde}.passos[${k}].alternativas[${m}].id`);
+        if (aids.has(xid)) throw new ErroConfig(`${onde}.passos[${k}]: alternativa "${xid}" repetida`); aids.add(xid);
+        const gid = id(xo.gesto, `${onde}.passos[${k}].alternativas[${m}].gesto`);
+        if (!gestos.has(gid)) throw new ErroConfig(`${onde}: o gesto "${gid}" não está na lista de gestos`);
+        return { id: xid, nome: texto(xo.nome ?? xid, `${onde}.alternativas[${m}].nome`)!, gesto: gid, efeito: xo.efeito === undefined || xo.efeito === null ? null : conferirEfeito(xo.efeito, `${onde}.alternativas[${m}].efeito`, efeito) };
+      }),
     };
   });
-  const ef = o.efeito === undefined ? {} : objeto(o.efeito, onde + '.efeito');
-  const plataformas: Modo[] = o.plataformas === undefined ? ['vr', 'pc'] : lista(o.plataformas, onde + '.plataformas', 2).map((x) => escolha(x, ['vr', 'pc'] as const, onde + '.plataformas'));
+  if (!passos.length) throw new ErroConfig(onde + '.passos: pelo menos um passo');
   return {
     id: aid, nome: texto(o.nome, onde + '.nome')!,
-    tipo: escolha(o.tipo, TIPOS_ACAO, onde + '.tipo', partes.length > 1 ? 'ataque' : 'gesto'),
-    maos: escolha(o.maos, MAOS, onde + '.maos', 'qualquer'),
-    partes,
-    condicoes: texto(o.condicoes, onde + '.condicoes', true),
-    opcional: o.opcional === true,
-    plataformas: [...new Set(plataformas)],
-    efeito: { forma: escolha(ef.forma, FORMAS_EFEITO, onde + '.efeito.forma', 'brilho'), cor: cor(ef.cor, onde + '.efeito.cor', '#4fd6d0'), origem: escolha(ef.origem, ORIGENS_EFEITO, onde + '.efeito.origem', 'maos') },
+    tipo: escolha(o.tipo, TIPOS_ACAO, onde + '.tipo', passos.length > 1 ? 'ataque' : 'gesto'),
+    passos, condicoes: texto(o.condicoes, onde + '.condicoes', true), opcional: o.opcional === true,
+    plataformas: plataformasDe(o.plataformas, onde + '.plataformas'), efeito,
     tempo_maximo: numero(o.tempo_maximo, onde + '.tempo_maximo', 0.5, 30, 5),
+    carga: conferirCarga(o.carga, onde + '.carga', passos),
+  };
+}
+
+function conferirCarga(v: unknown, onde: string, passos: Passo[]): Carga | null {
+  if (v === undefined || v === null) return null;
+  const o = objeto(v, onde);
+  const passo = id(o.passo ?? passos[0].id, onde + '.passo');
+  if (!passos.some((p) => p.id === passo)) throw new ErroConfig(`${onde}.passo: "${passo}" não é um passo da ação`);
+  const minimo = Math.round(numero(o.minimo, onde + '.minimo', 1, 30, 1)), maximo = Math.round(numero(o.maximo, onde + '.maximo', minimo, 30, minimo));
+  const niveis = o.niveis === undefined ? [] : lista(o.niveis, onde + '.niveis', 10).map((n, i) => {
+    const no = objeto(n, `${onde}.niveis[${i}]`);
+    return { ciclos: Math.round(numero(no.ciclos, `${onde}.niveis[${i}].ciclos`, 1, 30)), nome: texto(no.nome, `${onde}.niveis[${i}].nome`)! };
+  }).sort((a, b) => a.ciclos - b.ciclos);
+  return { passo, minimo, maximo, niveis };
+}
+
+/** Versão 1: cada parte da ação vira um gesto da biblioteca (`<acao>_<parte>`) e um passo. */
+function acaoDaVersao1(a: unknown, onde: string, padrao: AjustesGesto, ids: Set<string>, gestos: Map<string, Gesto>): Acao {
+  const o = objeto(a, onde), aid = id(o.id, onde + '.id');
+  if (ids.has(aid)) throw new ErroConfig(`${onde}.id: "${aid}" repetido`); ids.add(aid);
+  const maos = escolha(o.maos, ['uma', 'duas', 'qualquer'] as const, onde + '.maos', 'qualquer');
+  const conta: Conta = maos === 'uma' ? 'mao_dir' : maos === 'duas' ? 'duas_maos' : 'corpo';
+  const partes = o.partes === undefined ? [{ id: 'gesto', nome: 'Gesto', sugestao: o.sugestao ?? '' }] : lista(o.partes, onde + '.partes', 4);
+  const ef = o.efeito === undefined ? {} : objeto(o.efeito, onde + '.efeito');
+  const origem = ef.origem === 'mao_dir' || ef.origem === 'mao_esq' ? 'mao' : ef.origem;
+  const efeito = conferirEfeito({ ...ef, origem }, onde + '.efeito');
+  const pids = new Set<string>();
+  const passos: Passo[] = partes.map((pb, k) => {
+    const po = objeto(pb, `${onde}.partes[${k}]`), pid = id(po.id, `${onde}.partes[${k}].id`);
+    if (pids.has(pid)) throw new ErroConfig(`${onde}.partes: "${pid}" repetido`); pids.add(pid);
+    const gid = `${aid}_${pid}`.slice(0, 40);
+    gestos.set(gid, {
+      id: gid, nome: texto(po.nome ?? pid, `${onde}.partes[${k}].nome`)!, tipo: 'parte',
+      sugestao: texto(po.sugestao ?? '', `${onde}.partes[${k}].sugestao`)!, sugestao_pc: texto(po.sugestao_pc, `${onde}.partes[${k}].sugestao_pc`, true),
+      ajustes: { ...padrao, conta, espelhado: maos !== 'duas', duracao: numero(po.duracao, `${onde}.partes[${k}].duracao`, 0.5, 8, padrao.duracao) },
+    });
+    return { id: pid, nome: texto(po.nome ?? pid, `${onde}.partes[${k}].nome`)!, alternativas: [{ id: pid, nome: texto(po.nome ?? pid, onde)!, gesto: gid, efeito: null }] };
+  });
+  return {
+    id: aid, nome: texto(o.nome, onde + '.nome')!, tipo: escolha(o.tipo, TIPOS_ACAO, onde + '.tipo', passos.length > 1 ? 'ataque' : 'gesto'),
+    passos, condicoes: texto(o.condicoes, onde + '.condicoes', true), opcional: o.opcional === true,
+    plataformas: plataformasDe(o.plataformas, onde + '.plataformas'), efeito,
+    tempo_maximo: numero(o.tempo_maximo, onde + '.tempo_maximo', 0.5, 30, 5), carga: null,
   };
 }
 
@@ -197,5 +300,20 @@ function conferirAparencia(v: unknown): Aparencia {
   };
 }
 
-/** Todas as ações, na ordem dos blocos. */
+// ---------------- consultas ----------------
 export function todasAcoes(c: Configuracao): Acao[] { return c.blocos.flatMap((b) => b.acoes); }
+export function gestoPorId(c: Configuracao, id: string): Gesto | undefined { return c.gestos.find((g) => g.id === id); }
+/** Gestos que uma ação usa (sem repetir). */
+export function gestosDaAcao(a: Acao): string[] { return [...new Set(a.passos.flatMap((p) => p.alternativas.map((x) => x.gesto)))]; }
+/** Ações que usam um gesto. */
+export function acoesDoGesto(c: Configuracao, gesto: string): Acao[] { return todasAcoes(c).filter((a) => gestosDaAcao(a).includes(gesto)); }
+/** Efeito de uma alternativa (o próprio ou o da ação). */
+export function efeitoDe(a: Acao, alt: Alternativa | null): Efeito { return alt?.efeito ?? a.efeito; }
+/** Nível de carga pelo número de ciclos (sem níveis, o próprio número). */
+export function nivelDaCarga(c: Carga, ciclos: number): { ciclos: number; nome: Texto | null } {
+  const n = Math.min(c.maximo, ciclos);
+  if (!c.niveis.length) return { ciclos: n, nome: null };
+  let nivel: Carga['niveis'][number] | null = null;
+  for (const x of c.niveis) if (n >= x.ciclos) nivel = x;
+  return { ciclos: nivel?.ciclos ?? n, nome: nivel?.nome ?? null };
+}

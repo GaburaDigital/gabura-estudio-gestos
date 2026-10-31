@@ -13,7 +13,8 @@ import type { V3 } from '../nucleo/gravacao';
 /** Pose no espaço do boneco (metros do boneco, chão em y = 0). */
 export interface PoseBoneco {
   cabeca: { p: V3; q: THREE.Quaternion };
-  maos: Record<'esq' | 'dir', { p: V3; q: THREE.Quaternion; gatilho: number; grip: number }>;
+  /** `botao`: A (mão direita) ou X (esquerda) apertado: a palma muda de cor. */
+  maos: Record<'esq' | 'dir', { p: V3; q: THREE.Quaternion; gatilho: number; grip: number; botao?: boolean }>;
 }
 
 const v3 = (p: V3) => new THREE.Vector3(p.x, p.y, p.z);
@@ -43,7 +44,7 @@ export class Boneco {
   readonly olhos: number;
   private cabeca = new THREE.Group();
   private tronco: Osso; private frente: THREE.Mesh; private quadrilM: THREE.Mesh;
-  private bracos: Record<'esq' | 'dir', { braco: Osso; antebraco: Osso; mao: THREE.Group; dedos: THREE.Object3D; indicador: THREE.Object3D; cotovelo: THREE.Mesh }>;
+  private bracos: Record<'esq' | 'dir', { braco: Osso; antebraco: Osso; mao: THREE.Group; dedos: THREE.Object3D; indicador: THREE.Object3D; palma: THREE.MeshStandardMaterial; lado: number; cotovelo: THREE.Mesh }>;
   private pernas: Record<'esq' | 'dir', { coxa: Osso; canela: Osso; pe: THREE.Mesh }>;
   private extrasCostas = new THREE.Group();
   private H: number; private L: { cabeca: number; braco: number; antebraco: number; ombros: number; tronco: number; coxa: number; canela: number };
@@ -83,19 +84,30 @@ export class Boneco {
     g.add(this.extrasCostas);
     // braços e mãos (ou patas)
     const raioBraco = 0.034 * H * Math.sqrt(P.ombros);
-    const fazerMao = () => {
-      const mao = new THREE.Group(), s = 0.05 * H * (A.maos === 'patas' ? 1.25 : 1);
-      const palma = new THREE.Mesh(new THREE.BoxGeometry(s * 0.9, s * 0.45, s), mMao); palma.position.z = -s * 0.2; mao.add(palma);
-      const dedos = new THREE.Object3D(); dedos.position.set(0, 0, -s * 0.7); mao.add(dedos);
-      const bloco = new THREE.Mesh(new THREE.BoxGeometry(s * 0.6, s * 0.35, s * 0.6), mMao); bloco.position.set(s * 0.12, 0, -s * 0.3); dedos.add(bloco);
-      const indicador = new THREE.Object3D(); indicador.position.set(-s * 0.3, 0, -s * 0.7); mao.add(indicador);
-      const ind = new THREE.Mesh(new THREE.BoxGeometry(s * 0.22, s * 0.3, s * 0.6), mMao); ind.position.z = -s * 0.3; indicador.add(ind);
-      if (A.maos === 'patas') for (const x of [-0.25, 0.05, 0.3]) { const garra = new THREE.Mesh(new THREE.ConeGeometry(s * 0.07, s * 0.3, 4), material('#f2eadf')); garra.rotation.x = -Math.PI / 2; garra.position.set(x * s, 0, -s * 0.75); dedos.add(garra); }
-      g.add(mao); return { mao, dedos, indicador };
+    // Mão no jeito do controle do Quest (espaço do "grip", C35): os dedos apontam para −z, o polegar para +y e a
+    // palma fica virada para dentro (mão direita para −x, esquerda para +x). O indicador fica em cima (no gatilho)
+    // e os outros dedos embaixo (no grip): assim os dedos nunca aparecem trocados.
+    const fazerMao = (l: 'esq' | 'dir') => {
+      const mao = new THREE.Group(), s = 0.05 * H * (A.maos === 'patas' ? 1.25 : 1), sn = l === 'dir' ? -1 : 1;
+      const costas = new THREE.Mesh(new THREE.BoxGeometry(s * 0.35, s * 0.8, s * 0.85), mMao); costas.position.set(-sn * s * 0.02, 0, -s * 0.15); mao.add(costas);
+      const mPalma = material(A.cores.maos); mPalma.emissive.set('#000000');
+      const palma = new THREE.Mesh(new THREE.BoxGeometry(s * 0.06, s * 0.7, s * 0.75), mPalma); palma.position.set(sn * s * 0.19, 0, -s * 0.15); mao.add(palma);
+      const polegar = new THREE.Mesh(new THREE.BoxGeometry(s * 0.2, s * 0.2, s * 0.45), mMao); polegar.position.set(sn * s * 0.12, s * 0.45, -s * 0.3); mao.add(polegar);
+      // dedos (grip): bloco embaixo, dobra para o lado da palma
+      const dedos = new THREE.Object3D(); dedos.position.set(0, -s * 0.12, -s * 0.57); mao.add(dedos);
+      const bloco = new THREE.Mesh(new THREE.BoxGeometry(s * 0.3, s * 0.52, s * 0.55), mMao); bloco.position.set(0, 0, -s * 0.27); dedos.add(bloco);
+      // indicador (gatilho): em cima, perto do polegar
+      const indicador = new THREE.Object3D(); indicador.position.set(0, s * 0.27, -s * 0.57); mao.add(indicador);
+      const ind = new THREE.Mesh(new THREE.BoxGeometry(s * 0.26, s * 0.2, s * 0.6), mMao); ind.position.z = -s * 0.3; indicador.add(ind);
+      if (A.maos === 'patas') {
+        const garra = (pai: THREE.Object3D, y: number, z: number) => { const c = new THREE.Mesh(new THREE.ConeGeometry(s * 0.07, s * 0.3, 4), material('#f2eadf')); c.rotation.x = -Math.PI / 2; c.position.set(0, y, z); pai.add(c); };
+        garra(indicador, 0, -s * 0.68); garra(dedos, s * 0.12, -s * 0.62); garra(dedos, -s * 0.14, -s * 0.62);
+      }
+      g.add(mao); return { mao, dedos, indicador, palma: mPalma, lado: -sn };
     };
     this.bracos = {} as Boneco['bracos'];
     for (const l of ['esq', 'dir'] as const) {
-      const m = fazerMao();
+      const m = fazerMao(l);
       const cot = new THREE.Mesh(new THREE.IcosahedronGeometry(raioBraco, 0), mCorpo); g.add(cot);
       this.bracos[l] = { braco: new Osso(mCorpo, raioBraco, g), antebraco: new Osso(mCorpo, raioBraco * 0.85, g), cotovelo: cot, ...m };
     }
@@ -143,7 +155,9 @@ export class Boneco {
       const cot = cotovelo(ombro, mao, L.braco, L.antebraco, dir.clone().multiplyScalar(s), fr);
       b.braco.ligar(ombro, cot); b.antebraco.ligar(cot, mao); b.cotovelo.position.copy(cot);
       b.mao.position.copy(mao); b.mao.quaternion.copy(m.q);
-      b.dedos.rotation.x = -m.grip * 1.3; b.indicador.rotation.x = -m.gatilho * 1.2;
+      // dobrar os dedos para o lado da palma (mão direita: −x; esquerda: +x)
+      b.dedos.rotation.y = b.lado * m.grip * 1.4; b.indicador.rotation.y = b.lado * m.gatilho * 1.3;
+      b.palma.emissive.set(m.botao ? '#ffb800' : '#000000'); b.palma.emissiveIntensity = m.botao ? 0.9 : 0;
     }
     // pernas: pés no chão embaixo do quadril; o joelho dobra para a frente quando o quadril desce
     for (const l of ['esq', 'dir'] as const) {

@@ -5,9 +5,11 @@
 // ação, e as gravações (uma por registro, para salvar uma tentativa não regravar todas).
 
 import type { Configuracao, Modo } from './config';
-import type { Gravacao } from './gravacao';
+import { migrarGravacao, type Gravacao } from './gravacao';
 
-export interface NotasAcao { observacoes: string; tolerancia: number }
+/** Observações de cada ação (a tolerância e os outros ajustes ficam em cada gesto, na configuração). */
+export interface NotasAcao { observacoes: string }
+/** A configuração guardada é a de trabalho: com as preparações adicionadas e os ajustes feitos no Estúdio. */
 export interface Projeto { projeto: string; config: Configuracao; notas: Record<string, NotasAcao>; atualizado: string }
 
 const BANCO = 'gabura-estudio-gestos', VERSAO = 1;
@@ -32,7 +34,7 @@ function pedido<T>(r: IDBRequest<T>): Promise<T> {
   return new Promise((ok, erro) => { r.onsuccess = () => ok(r.result); r.onerror = () => erro(r.error); });
 }
 
-export const chaveGravacao = (projeto: string, g: Pick<Gravacao, 'modo' | 'acao' | 'parte' | 'n'>) => `${projeto}|${g.modo}|${g.acao}|${g.parte}|${g.n}`;
+export const chaveGravacao = (projeto: string, g: Pick<Gravacao, 'modo' | 'gesto' | 'n'>) => `${projeto}|${g.modo}|${g.gesto}|${g.n}`;
 
 /** Armazém do navegador. Se o IndexedDB não funcionar (janela anônima, por exemplo), guarda só na memória. */
 export class Armazem {
@@ -63,15 +65,24 @@ export class Armazem {
     let todas: (Gravacao & { projeto: string })[];
     if (!this.db) todas = [...this.memoria.gravacoes.values()].filter((g) => g.projeto === projeto);
     else todas = await pedido(this.db.transaction('gravacoes').objectStore('gravacoes').index('projeto').getAll(projeto) as IDBRequest<(Gravacao & { projeto: string })[]>);
-    return todas.filter((g) => !modo || g.modo === modo).map((g) => { const c = { ...g } as Partial<Gravacao & { chave: string; projeto: string }>; delete c.chave; delete c.projeto; return c as Gravacao; });
+    const r: Gravacao[] = [];
+    for (const g of todas) {
+      if (modo && g.modo !== modo) continue;
+      const c = { ...g } as Record<string, unknown>; delete c.chave; delete c.projeto;
+      const m = migrarGravacao(c); if (m) r.push(m); // gravações da versão 1 (ação + parte) viram o gesto da versão 2
+    }
+    return r;
   }
   async salvarGravacao(projeto: string, g: Gravacao): Promise<void> {
     const r = { ...g, chave: chaveGravacao(projeto, g), projeto };
     if (!this.db) { this.memoria.gravacoes.set(r.chave, r); return; }
     await pedido(this.db.transaction('gravacoes', 'readwrite').objectStore('gravacoes').put(r));
   }
-  async apagarGravacao(projeto: string, g: Pick<Gravacao, 'modo' | 'acao' | 'parte' | 'n'>): Promise<void> {
+  async apagarGravacao(projeto: string, g: Pick<Gravacao, 'modo' | 'gesto' | 'n'>): Promise<void> {
     const chave = chaveGravacao(projeto, g);
+    // gravação antiga (versão 1) guardada com a chave antiga
+    const antiga = /^(.+)_([a-z0-9]+)$/.exec(g.gesto);
+    if (this.db && antiga) await pedido(this.db.transaction('gravacoes', 'readwrite').objectStore('gravacoes').delete(`${projeto}|${g.modo}|${antiga[1]}|${antiga[2]}|${g.n}`));
     if (!this.db) { this.memoria.gravacoes.delete(chave); return; }
     await pedido(this.db.transaction('gravacoes', 'readwrite').objectStore('gravacoes').delete(chave));
   }

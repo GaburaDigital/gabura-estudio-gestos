@@ -5,8 +5,9 @@
 window.__gestos = (() => {
   const R = (x, y, z) => [x, y, z];
   const DESCANSO = { e: R(-0.2, 0.85, -0.08), d: R(0.2, 0.85, -0.08) };
-  // chaves: [tempo, mão esq, mão dir, gatilho esq, gatilho dir, grip esq, grip dir]
-  const k = (t, e, d, ge = 0, gd = 0, pe = 0, pd = 0) => ({ t, e, d, ge, gd, pe, pd });
+  // chaves: [tempo, mão esq, mão dir, gatilho esq, gatilho dir, grip esq, grip dir, giro do pulso esq e dir (rad)]
+  const k = (t, e, d, ge = 0, gd = 0, pe = 0, pd = 0, re = 0, rd = 0) => ({ t, e, d, ge, gd, pe, pd, re, rd });
+  const PUNHO = R(0.25, 1.15, -0.35), ARMADO = R(0.3, 1.45, 0.02), ESTICADO = R(0.15, 1.4, -0.78);
   const G = {
     parado: () => [k(0, DESCANSO.e, DESCANSO.d), k(1, DESCANSO.e, DESCANSO.d)],
     aceno: () => {
@@ -20,6 +21,15 @@ window.__gestos = (() => {
     liberar: () => [k(0, R(0.15, 1.0, -0.15), R(0.32, 1.0, -0.15), 1, 1), k(0.22, R(-0.08, 1.3, -0.65), R(0.08, 1.3, -0.65), 0, 0), k(0.6, R(-0.08, 1.3, -0.65), R(0.08, 1.3, -0.65)), k(1.0, DESCANSO.e, DESCANSO.d)],
     empurrar: () => [k(0, DESCANSO.e, DESCANSO.d), k(0.3, R(-0.08, 1.3, -0.65), R(0.08, 1.3, -0.65)), k(0.7, R(-0.08, 1.3, -0.65), R(0.08, 1.3, -0.65)), k(1.1, DESCANSO.e, DESCANSO.d)],
     soco: () => [k(0, DESCANSO.e, DESCANSO.d), k(0.3, DESCANSO.e, R(0.2, 1.35, -0.1), 0, 1, 0, 1), k(0.45, DESCANSO.e, R(0.15, 1.4, -0.7), 0, 1, 0, 1), k(0.8, DESCANSO.e, DESCANSO.d)],
+    // furadeira: UM ciclo de giro do pulso (só gira, a mão quase não sai do lugar), punho fechado
+    giro: () => [k(0, DESCANSO.e, PUNHO, 0, 1, 0, 1, 0, 0), k(0.25, DESCANSO.e, PUNHO, 0, 1, 0, 1, 0, 1.6), k(0.6, DESCANSO.e, PUNHO, 0, 1, 0, 1, 0, -1.6), k(0.85, DESCANSO.e, PUNHO, 0, 1, 0, 1, 0, 0)],
+    // preparação: punho perto do ombro, cotovelo levantado, segurando um instante
+    cotovelo: () => [k(0, DESCANSO.e, PUNHO, 0, 1, 0, 1), k(0.35, DESCANSO.e, ARMADO, 0, 1, 0, 1), k(1.0, DESCANSO.e, ARMADO, 0, 1, 0, 1)],
+    cotoveloRapido: () => [k(0, DESCANSO.e, PUNHO, 0, 1, 0, 1), k(0.2, DESCANSO.e, ARMADO, 0, 1, 0, 1), k(0.4, DESCANSO.e, PUNHO, 0, 1, 0, 1)],
+    // soco completo (do ombro até o braço esticado) e um soco curto (mexer pouco a mão)
+    socoCompleto: () => [k(0, DESCANSO.e, ARMADO, 0, 1, 0, 1), k(0.18, DESCANSO.e, ESTICADO, 0, 1, 0, 1), k(0.5, DESCANSO.e, ESTICADO, 0, 1, 0, 1)],
+    socoCurto: () => [k(0, DESCANSO.e, ARMADO, 0, 1, 0, 1), k(0.12, DESCANSO.e, R(0.27, 1.43, -0.18), 0, 1, 0, 1), k(0.4, DESCANSO.e, R(0.27, 1.43, -0.18), 0, 1, 0, 1)],
+    gancho: () => [k(0, DESCANSO.e, ARMADO, 0, 1, 0, 1), k(0.1, DESCANSO.e, R(0.25, 1.0, -0.3), 0, 1, 0, 1), k(0.3, DESCANSO.e, R(0.2, 2.0, -0.3), 0, 1, 0, 1), k(0.6, DESCANSO.e, R(0.2, 2.0, -0.3), 0, 1, 0, 1)],
     // movimentos que NÃO são gestos: andar balançando os braços e mexer as mãos à toa
     andar: () => { const r = []; for (let i = 0; i <= 10; i++) r.push(k(i * 0.25, R(-0.22, 0.85, -0.08 + (i % 2 ? 0.12 : -0.12)), R(0.22, 0.85, -0.08 + (i % 2 ? -0.12 : 0.12)))); r.andar = 1.2; return r; },
     coçar: () => [k(0, DESCANSO.e, DESCANSO.d), k(0.6, DESCANSO.e, R(0.12, 1.5, 0.0)), k(1.0, DESCANSO.e, R(0.1, 1.48, 0.02)), k(1.6, DESCANSO.e, DESCANSO.d)],
@@ -29,7 +39,7 @@ window.__gestos = (() => {
     let i = 0; while (i < chaves.length - 2 && chaves[i + 1].t < t) i++;
     const a = chaves[i], b = chaves[Math.min(i + 1, chaves.length - 1)];
     let s = b.t > a.t ? Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t))) : 0; s = s * s * (3 - 2 * s);
-    return { e: lerp(a.e, b.e, s), d: lerp(a.d, b.d, s), ge: a.ge + (b.ge - a.ge) * s, gd: a.gd + (b.gd - a.gd) * s, pe: a.pe + (b.pe - a.pe) * s, pd: a.pd + (b.pd - a.pd) * s };
+    return { e: lerp(a.e, b.e, s), d: lerp(a.d, b.d, s), ge: a.ge + (b.ge - a.ge) * s, gd: a.gd + (b.gd - a.gd) * s, pe: a.pe + (b.pe - a.pe) * s, pd: a.pd + (b.pd - a.pd) * s, re: a.re + (b.re - a.re) * s, rd: a.rd + (b.rd - a.rd) * s };
   }
   let semente = 1;
   const sorte = () => { semente = (semente * 16807) % 2147483647; return (semente - 1) / 2147483646; };
@@ -37,6 +47,8 @@ window.__gestos = (() => {
   function gerar(nome, op = {}) {
     const chaves = G[nome](), dur = chaves[chaves.length - 1].t, v = op.velocidade ?? 1, s = (op.altura ?? 1.6) / 1.6, yaw = op.yaw ?? 0, tr = op.tremido ?? 0.01;
     const c = Math.cos(yaw), sn = Math.sin(yaw), q = { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
+    // mão: virada como a cabeça e girada no próprio eixo (−z) pelo giro do pulso; no espelho o giro inverte
+    const qMao = (giro) => { const h = -giro / 2, cz = Math.cos(h), sz = Math.sin(h); return { x: q.y * sz, y: q.y * cz, z: q.w * sz, w: q.w * cz }; }; // giro (y) × giro do pulso (z)
     const r = [], n = Math.ceil((dur / v) * 72);
     for (let i = 0; i <= n; i++) {
       const tl = (i / 72) * v, p = poseNo(chaves, tl);
@@ -50,8 +62,10 @@ window.__gestos = (() => {
       const [me, md] = op.espelhar ? [p.d, p.e] : [p.e, p.d];
       const cab = mundo([0, 1.6, -anda + 0]);
       cab.y = 1.6 * s;
-      const mao = (pos, g, gr) => ({ p: mundo(pos), q, gatilho: g, grip: gr });
-      r.push({ t: (op.t0 ?? 0) + i / 72, cabeca: { p: cab, q }, esq: mao(me, op.espelhar ? p.gd : p.ge, op.espelhar ? p.pd : p.pe), dir: mao(md, op.espelhar ? p.ge : p.gd, op.espelhar ? p.pe : p.pd), botoes: 0 });
+      const mao = (pos, g, gr, giro) => ({ p: mundo(pos), q: qMao(giro), gatilho: g, grip: gr });
+      r.push({ t: (op.t0 ?? 0) + i / 72, cabeca: { p: cab, q },
+        esq: mao(me, op.espelhar ? p.gd : p.ge, op.espelhar ? p.pd : p.pe, op.espelhar ? -p.rd : p.re),
+        dir: mao(md, op.espelhar ? p.ge : p.gd, op.espelhar ? p.pe : p.pd, op.espelhar ? -p.re : p.rd), botoes: 0 });
     }
     return r;
   }

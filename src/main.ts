@@ -1,21 +1,21 @@
 // Estúdio de Gestos Gabura: página, cena 3D, VR e teclado/mouse.
-// - Gravar para VR: no Quest, entre no VR e use o painel à esquerda (analógico escolhe, A grava, B apaga, X revê,
-//   Y testa). O boneco à frente imita você e repete cada gravação.
+// - Gravar para VR: no Quest, entre no VR e use o menu à esquerda (analógico escolhe e muda, A confirma, B volta,
+//   segurar Y volta ao começo). O boneco à frente imita você e repete cada gravação.
 // - Gravar para PC: clique em Gravar e faça a sequência de teclas e mouse depois da contagem.
 // Tudo fica guardado no navegador; Exportar gera o .zip que vai para o projeto do jogo.
 
 import './estilo.css';
 import * as THREE from 'three';
-import { conferirConfig, APARENCIA_CINZA, ErroConfig, type Acao } from './nucleo/config';
+import { conferirConfig, efeitoDe, APARENCIA_CINZA, ErroConfig, type Acao, type Efeito } from './nucleo/config';
 import { Armazem } from './nucleo/armazem';
 import { Estudio } from './nucleo/estudio';
 import { amostraNoTempo, bitsDosBotoes, quadroParaAmostra, type Amostra, type Gravacao } from './nucleo/gravacao';
 import { exportar, importar, nomeDoPacote, type Conteudo } from './nucleo/pacote';
-import type { EventoReconhecido } from './nucleo/reconhecedor';
+import type { EventoReconhecido, Lado } from './nucleo/reconhecedor';
 import { Boneco, type PoseBoneco } from './boneco/boneco';
 import { Efeitos } from './boneco/efeitos';
 import { poseDaAmostra, referenciaDe, type Referencia } from './boneco/pose';
-import { PainelVR } from './interface/painel_vr';
+import { MenuVR } from './interface/painel_vr';
 import { desenharDetalhe, desenharLista, montarEsqueleto } from './interface/pagina';
 import { entrada, ligarControlesVR, lerVR, vibrar } from './xr/entrada';
 import { T, tx } from './textos';
@@ -44,7 +44,8 @@ async function iniciar(): Promise<void> {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 60); rig.add(camera);
   const lugarBoneco = new THREE.Group(); lugarBoneco.position.set(0, 0, -DISTANCIA_BONECO); lugarBoneco.rotation.y = Math.PI; cena.add(lugarBoneco);
   const efeitos = new Efeitos(); cena.add(efeitos.grupo);
-  const painel = new PainelVR(); painel.malha.visible = false; rig.add(painel.malha);
+  const painel = new MenuVR(estudio, { rever: () => reverGesto(), testar: () => testar(), gravar: () => { if (estudio.gravar(relogio())) vibrar('dir', 0.3, 40); } });
+  painel.malha.visible = false; rig.add(painel.malha);
   ligarControlesVR(render, rig);
   for (const m of Object.values(entrada.maos)) rig.add(m.pose); // até conectar, as mãos ficam no rig (testes simulados)
 
@@ -137,6 +138,12 @@ async function iniciar(): Promise<void> {
     if (!g.quadros?.length) return;
     reprise = { g, inicio: relogio(), ref: referenciaDe(quadroParaAmostra(g.quadros[0])) };
   }
+  /** Revê as gravações do gesto escolhido, uma de cada vez. */
+  function reverGesto(): void {
+    const g = estudio.gesto; if (!g) return;
+    const ts = estudio.tentativas(g.id); if (!ts.length) return;
+    const i = reprise ? (ts.findIndex((x) => x === reprise!.g) + 1) % ts.length : 0; comecarReprise(ts[i]);
+  }
   function poseAgora(agora: number, viva: Amostra | null): PoseBoneco {
     if (reprise) {
       const q = reprise.g.quadros!, dur = q[q.length - 1][0], t = agora - reprise.inicio;
@@ -160,40 +167,66 @@ async function iniciar(): Promise<void> {
   function reconheceu(ev: EventoReconhecido): void {
     if (ev.tipo === 'expirou') return;
     const a = acaoPorId(ev.acao); if (!a) return;
+    if (ev.tipo === 'passo' && ev.indice + 1 >= ev.total) return; // o "disparou" logo depois mostra o efeito
     const final = ev.tipo === 'disparou';
-    if (ev.tipo === 'parte' && ev.indice + 1 >= ev.total) return; // o "disparou" logo depois mostra o efeito
-    const nome = tx(a.nome) + (final ? '' : ` · ${tx(a.partes[ev.tipo === 'parte' ? ev.indice : 0].nome)}`);
+    let nome = tx(a.nome);
+    if (ev.tipo === 'passo') nome += ` · ${tx(a.passos[ev.indice].nome)}`;
+    if (ev.tipo === 'carga') nome += ` · ${T.carga} ${ev.ciclos}${ev.nivel ? ' (' + ev.nivel + ')' : ''}`;
+    const alt = final ? a.passos[a.passos.length - 1].alternativas.find((x) => x.id === ev.alternativa) ?? null : null;
+    if (final && alt && a.passos[a.passos.length - 1].alternativas.length > 1) nome += ` · ${tx(alt.nome)}`;
+    if (final && ev.ciclos) nome += ` · ${T.carga} ${ev.ciclos}${ev.nivel ? ' (' + ev.nivel + ')' : ''}`;
     painel.reconhecidos.push({ nome, t: relogio(), final }); if (painel.reconhecidos.length > 20) painel.reconhecidos.shift();
     avisar(`${T.reconheceu}: ${nome}`, 2);
-    vibrar('dir', final ? 0.9 : 0.4, final ? 120 : 50); vibrar('esq', final ? 0.9 : 0.4, final ? 120 : 50);
-    // no PC (sem imitar ao vivo), o boneco repete a gravação de VR dessa parte, se houver
-    if (entrada.modo !== 'vr') {
-      const parte = ev.tipo === 'parte' ? a.partes[ev.indice].id : a.partes[a.partes.length - 1].id;
-      const g = estudio.gravacoes.find((x) => x.modo === 'vr' && x.acao === a.id && x.parte === parte && x.quadros?.length);
+    vibrar(ev.lado, final ? 0.9 : 0.4, final ? 120 : 50);
+    // no PC (sem imitar ao vivo), o boneco repete a gravação de VR desse gesto, se houver
+    if (entrada.modo !== 'vr' && ev.tipo !== 'carga') {
+      const gesto = final ? alt?.gesto : a.passos[ev.indice].alternativas.find((x) => x.id === ev.alternativa)?.gesto;
+      const g = estudio.gravacoes.find((x) => x.modo === 'vr' && x.gesto === gesto && x.quadros?.length);
       if (g) comecarReprise(g);
     }
-    if (final) soltarEfeito(a);
+    if (final) soltarEfeito(efeitoDe(a, alt), ev.lado);
   }
-  function soltarEfeito(a: Acao): void {
-    const e = a.efeito, H = boneco.altura;
-    const lado = (l: 'esq' | 'dir') => (espelho ? (l === 'esq' ? 'dir' : 'esq') : l); // no espelho a mão aparece trocada
-    let origem: THREE.Vector3, dir = boneco.olharMundo();
+
+  // ---------------- direção dos poderes (C35) ----------------
+  // caminho recente das mãos (de verdade e do boneco), para a direção "movimento"
+  const rastro: Record<string, THREE.Vector3[]> = { esq: [], dir: [], b_esq: [], b_dir: [] };
+  function anotarRastro(chave: string, p: THREE.Vector3): void { const r = rastro[chave]; r.push(p.clone()); if (r.length > 8) r.shift(); }
+  function movimento(chave: string): THREE.Vector3 { const r = rastro[chave]; return r.length > 1 ? r[r.length - 1].clone().sub(r[0]) : new THREE.Vector3(0, 0, -1); }
+  /** Origem e direção de um poder para quem usa: as mãos e a cabeça de verdade (VR) ou o boneco. */
+  function origemEDirecao(e: Efeito, lado: Lado, boneco_: boolean): { o: THREE.Vector3; d: THREE.Vector3 } {
+    // no boneco com espelho, a mão de quem testa aparece trocada
+    const lb = (l: Lado): Lado => (boneco_ && espelho ? (l === 'esq' ? 'dir' : 'esq') : l);
+    const ladoMao: Lado = e.origem === 'mao_dir' ? 'dir' : e.origem === 'mao_esq' ? 'esq' : lado;
+    const mao = (l: Lado) => boneco_ ? boneco.maoMundo(lb(l)) : entrada.maos[l].pose.getWorldPosition(new THREE.Vector3());
+    const apontar = (l: Lado) => boneco_ ? boneco.apontarMundo(lb(l)) : new THREE.Vector3(0, 0, -1).applyQuaternion(entrada.maos[l].pose.getWorldQuaternion(new THREE.Quaternion()));
+    const cabecaP = boneco_ ? boneco.bocaMundo() : camera.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.08, 0));
+    const olhar = boneco_ ? boneco.olharMundo() : new THREE.Vector3(0, 0, -1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()));
+    const corpo = boneco_ ? boneco.corpoMundo() : camera.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.5, 0));
+    let o: THREE.Vector3;
     switch (e.origem) {
-      case 'mao_dir': origem = boneco.maoMundo(lado('dir')); dir = boneco.apontarMundo(lado('dir')); break;
-      case 'mao_esq': origem = boneco.maoMundo(lado('esq')); dir = boneco.apontarMundo(lado('esq')); break;
-      case 'boca': origem = boneco.bocaMundo(); break;
-      case 'corpo': origem = boneco.corpoMundo(); break;
-      case 'chao': origem = boneco.corpoMundo().setY(0.05); dir = new THREE.Vector3(0, 1, 0); break;
-      default: origem = boneco.maoMundo('esq').add(boneco.maoMundo('dir')).multiplyScalar(0.5);
+      case 'boca': o = cabecaP; break;
+      case 'corpo': o = corpo; break;
+      case 'chao': o = corpo.clone().setY(0.05); break;
+      case 'maos': o = mao('esq').add(mao('dir')).multiplyScalar(0.5); break;
+      default: o = mao(ladoMao);
     }
-    efeitos.soltar(e.forma, e.cor, origem, dir, H);
-    // no VR, o poder sai também das mãos de verdade de quem está testando
-    if (entrada.modo === 'vr') {
-      const l = e.origem === 'mao_esq' ? 'esq' : 'dir', m = entrada.maos[l].pose;
-      const o = e.origem === 'boca' ? camera.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.1, 0)) : m.getWorldPosition(new THREE.Vector3());
-      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(e.origem === 'boca' ? camera.getWorldQuaternion(new THREE.Quaternion()) : m.getWorldQuaternion(new THREE.Quaternion()));
-      efeitos.soltar(e.forma, e.cor, o, d, alturaOlhos * 0.6);
+    let d: THREE.Vector3;
+    switch (e.direcao) {
+      case 'pulso': case 'apontar': d = apontar(ladoMao); break;
+      case 'cabeca': d = olhar.clone(); d.y -= 0.14; break; // um pouco abaixo da linha dos olhos
+      case 'movimento': d = movimento((boneco_ ? 'b_' : '') + lb(ladoMao)); break;
+      case 'cima': d = new THREE.Vector3(0, 1, 0); break;
+      case 'baixo': d = new THREE.Vector3(0, -1, 0); break;
+      default: d = olhar.clone(); d.y = 0;
     }
+    if (d.lengthSq() < 1e-6) d.set(0, 0, -1);
+    return { o, d: d.normalize() };
+  }
+  function soltarEfeito(e: Efeito, lado: Lado): void {
+    const b = origemEDirecao(e, lado, true);
+    efeitos.soltar(e.forma, e.cor, b.o, b.d, boneco.altura, e.duracao);
+    // no VR, o poder sai também das mãos (ou da cabeça) de verdade de quem está testando
+    if (entrada.modo === 'vr') { const r = origemEDirecao(e, lado, false); efeitos.soltar(e.forma, e.cor, r.o, r.d, alturaOlhos * 0.6, e.duracao); }
   }
 
   // ---------------- teclado e mouse (modo PC) ----------------
@@ -216,6 +249,7 @@ async function iniciar(): Promise<void> {
 
   // ---------------- quadro a quadro ----------------
   const armado = { y: true, x: true };
+  let seguraY = 0;
   let ultimoQuadro = relogio();
   function amostraVR(agora: number): Amostra {
     const cp = camera.getWorldPosition(new THREE.Vector3()), cq = camera.getWorldQuaternion(new THREE.Quaternion());
@@ -225,23 +259,18 @@ async function iniciar(): Promise<void> {
     };
     return { t: agora, cabeca: { p: { x: cp.x, y: cp.y, z: cp.z }, q: { x: cq.x, y: cq.y, z: cq.z, w: cq.w } }, esq: mao('esq'), dir: mao('dir'), botoes: bitsDosBotoes(entrada.botoesVivos) };
   }
-  function comandosVR(agora: number): void {
-    const ocupado = estudio.estado === 'contagem' || estudio.estado === 'gravando';
-    if (ocupado) return; // durante a gravação, os botões fazem parte do gesto
+  /** Controles do menu do VR: analógico direito escolhe e muda, A confirma, B volta, segurar Y 1 s volta ao começo.
+   *  Durante a contagem e a gravação, só o Y (cancelar) funciona: os outros botões fazem parte do gesto. */
+  function comandosVR(dt: number): void {
+    if (entrada.botoesVivos.has('Y')) { seguraY += dt; if (seguraY >= 1 && seguraY - dt < 1) { painel.inicio(); vibrar('esq', 0.5, 60); } } else seguraY = 0;
+    if (estudio.ocupado) return;
     const a = entrada.maos.dir.analogico;
     if (Math.abs(a.y) < 0.3) armado.y = true;
     if (Math.abs(a.x) < 0.3) armado.x = true;
-    if (estudio.estado !== 'testando') {
-      if (armado.y && Math.abs(a.y) > 0.7) { armado.y = false; estudio.escolher(estudio.acaoIdx + (a.y > 0 ? 1 : -1)); }
-      if (armado.x && Math.abs(a.x) > 0.7) { armado.x = false; estudio.escolher(estudio.acaoIdx, estudio.parteIdx + (a.x > 0 ? 1 : -1)); }
-      if (entrada.apertou.has('A')) { if (estudio.gravar(agora)) vibrar('dir', 0.3, 40); }
-      if (entrada.apertou.has('B')) void estudio.apagarUltima();
-      if (entrada.apertou.has('X')) {
-        const ts = estudio.acao && estudio.parte ? estudio.tentativas(estudio.acao.id, estudio.parte.id) : [];
-        if (ts.length) { const i = reprise ? (ts.findIndex((g) => g === reprise!.g) + 1) % ts.length : 0; comecarReprise(ts[i]); }
-      }
-    }
-    if (entrada.apertou.has('Y')) testar();
+    if (armado.y && Math.abs(a.y) > 0.7) { armado.y = false; painel.comando(a.y > 0 ? 'baixo' : 'cima'); }
+    if (armado.x && Math.abs(a.x) > 0.7) { armado.x = false; painel.comando(a.x > 0 ? 'dir' : 'esq'); }
+    if (entrada.apertou.has('A')) painel.comando('A');
+    if (entrada.apertou.has('B')) painel.comando('B');
   }
   let ultimoSegundo = -1;
   function quadro(): void {
@@ -251,14 +280,15 @@ async function iniciar(): Promise<void> {
       lerVR();
       if (medirEm > 0 && --medirEm === 0) alturaOlhos = Math.max(0.9, camera.getWorldPosition(new THREE.Vector3()).y);
       viva = amostraVR(agora);
-      comandosVR(agora);
+      comandosVR(dt);
       estudio.quadroVR(viva, agora);
       // tique na contagem e no começo da gravação
       const s = Math.ceil(estudio.falta);
       if (estudio.estado === 'contagem' && s !== ultimoSegundo) { ultimoSegundo = s; vibrar('esq', 0.25, 30); vibrar('dir', 0.25, 30); }
       if (estudio.estado === 'gravando' && ultimoSegundo !== -2) { ultimoSegundo = -2; vibrar('esq', 0.7, 80); vibrar('dir', 0.7, 80); }
       if (estudio.estado === 'parado') ultimoSegundo = -1;
-      painel.desenhar(estudio, agora);
+      painel.desenhar();
+      for (const l of ['esq', 'dir'] as const) anotarRastro(l, entrada.maos[l].pose.getWorldPosition(new THREE.Vector3()));
     } else {
       estudio.tempo(agora);
       if (agora >= proximoMover) {
@@ -271,10 +301,14 @@ async function iniciar(): Promise<void> {
     }
     // reconhecimento ao vivo no VR: o boneco imita; carga nas mãos de quem está engatilhado
     boneco.aplicar(poseAgora(agora, viva)); // a gravação que está sendo revista vem antes da imitação ao vivo
-    const eng = estudio.reconhecedor?.engatilhadas() ?? [];
+    for (const l of ['esq', 'dir'] as const) anotarRastro('b_' + l, boneco.maoMundo(l));
+    // carga: brilho na mão que engatilhou (no boneco e na mão de verdade), maior com mais ciclos
+    const eng = estudio.estado === 'testando' ? estudio.reconhecedor?.engatilhadas() ?? [] : [];
     for (const l of ['esq', 'dir'] as const) {
-      const a = eng.length ? acaoPorId(eng[0]) : undefined;
-      efeitos.carga('boneco_' + l, a ? a.efeito.cor : null, a ? boneco.maoMundo(l) : null, boneco.altura * 0.6, agora);
+      const x = eng.find((y) => y.lado === l), a = x ? acaoPorId(x.acao) : undefined;
+      const lb: Lado = espelho ? (l === 'esq' ? 'dir' : 'esq') : l;
+      efeitos.carga('boneco_' + l, a ? a.efeito.cor : null, a ? boneco.maoMundo(lb) : null, boneco.altura * 0.6, agora, x?.ciclos ?? 0);
+      efeitos.carga('real_' + l, a && entrada.modo === 'vr' ? a.efeito.cor : null, a ? entrada.maos[l].pose.getWorldPosition(new THREE.Vector3()) : null, 0.6, agora, x?.ciclos ?? 0);
     }
     efeitos.atualizar(dt);
     render.render(cena, camera);
@@ -291,7 +325,7 @@ async function iniciar(): Promise<void> {
 
   // ganchos para os testes automáticos (simulam o Quest sem óculos)
   (window as unknown as { __teste: unknown }).__teste = {
-    THREE, estudio, entrada, camera, rig, efeitos, armazem, painel,
+    THREE, estudio, entrada, camera, rig, efeitos, armazem, painel, origemEDirecao, anotarRastro, get espelho() { return espelho; },
     get boneco() { return boneco; }, get reprise() { return reprise; },
     exportar: (c: Conteudo) => exportar(estudio.config!, estudio.notas, estudio.gravacoes, c),
     importar: async (dados: number[]) => { const r = importar(new Uint8Array(dados)); await estudio.abrirProjeto(r.config, r.notas, r.gravacoes); trocarBoneco(); },

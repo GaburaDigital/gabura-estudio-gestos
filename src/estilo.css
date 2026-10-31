@@ -53,3 +53,5 @@ input[type=range] { width: 100%; }
 .erro { color: var(--vermelho); font-weight: 700; }
 #vazio { padding: 40px; color: var(--suave); font-size: 18px; max-width: 520px; }
 @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; } #lista, #detalhe { border: none; } }
+select { background: var(--painel2); border: 1px solid var(--linha); border-radius: 10px; padding: 8px; color: var(--texto); max-width: 100%; }
+label.suave { display: block; margin: 6px 0; }

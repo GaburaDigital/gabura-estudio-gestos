@@ -1,8 +1,9 @@
-// O "cérebro" do Estúdio, sem desenho: qual ação e parte estão escolhidas, a contagem, a gravação, as tentativas
-// guardadas, as observações e o modo testar. A página (PC) e o painel do VR só chamam estas funções e desenham o
-// estado. Assim os testes automáticos conseguem gravar e testar gestos sem óculos (só chamando `quadroVR`).
+// O "cérebro" do Estúdio, sem desenho: qual ação e qual gesto estão escolhidos, a contagem, a gravação, as
+// tentativas, as observações, os ajustes de cada gesto, a biblioteca de preparações e o modo testar.
+// A página (PC) e o menu do VR só chamam estas funções e desenham o estado. Assim os testes automáticos conseguem
+// gravar e testar gestos sem óculos (só chamando `quadroVR`).
 
-import { todasAcoes, type Acao, type Configuracao, type Modo } from './config';
+import { AJUSTES_PADRAO, LIMITES, acoesDoGesto, gestoPorId, idValido, todasAcoes, type Acao, type AjustesGesto, type Configuracao, type Gesto, type Modo, type Texto } from './config';
 import { Armazem, type NotasAcao, type Projeto } from './armazem';
 import { acharTrecho, alturaDosOlhos, amostraParaQuadro, type Amostra, type EventoPC, type Gravacao } from './gravacao';
 import { Reconhecedor, fichasPC, type EventoReconhecido } from './reconhecedor';
@@ -15,35 +16,39 @@ export class Estudio {
   gravacoes: Gravacao[] = [];
   modo: Modo = 'vr';
   acaoIdx = 0;
-  parteIdx = 0;
+  /** Gesto escolhido (um passo ou uma alternativa da ação, ou uma preparação da biblioteca). */
+  gestoId: string | null = null;
   estado: Estado = 'parado';
-  /** Segundos que faltam na contagem ou na gravação (para a tela). */
   falta = 0;
-  /** Última mensagem para quem está gravando (PT/EN fica na tela). */
   aviso: { chave: string; valor?: string } | null = null;
   reconhecedor: Reconhecedor | null = null;
-  /** Quem quer saber de mudanças (tela, painel do VR). */
   aoMudar: () => void = () => {};
   aoReconhecer: (e: EventoReconhecido) => void = () => {};
+  /** A gravação que acabou de ser feita (o boneco repete na hora). */
+  ultimaGravada: Gravacao | null = null;
 
   private quadros: number[][] = [];
   private eventos: EventoPC[] = [];
   private t0 = 0;
   private fimContagem = 0;
   private fimGravacao = 0;
+  private gravandoGesto: Gesto | null = null;
 
   constructor(readonly armazem: Armazem) {}
 
   // ---------------- projeto ----------------
-  async abrirProjeto(config: Configuracao, notas?: Record<string, NotasAcao>, gravacoes?: Gravacao[]): Promise<void> {
+  /** Abre um projeto. Com `manterEdicoes`, uma configuração nova do mesmo projeto não apaga as preparações
+   *  criadas e os ajustes feitos no Estúdio. */
+  async abrirProjeto(config: Configuracao, notas?: Record<string, NotasAcao>, gravacoes?: Gravacao[], manterEdicoes = true): Promise<void> {
     const antigo = await this.armazem.lerProjeto(config.projeto);
+    if (manterEdicoes && antigo?.config?.gestos) config = juntarEdicoes(config, antigo.config);
     this.config = config;
     this.notas = { ...(antigo?.notas ?? {}), ...(notas ?? {}) };
     if (gravacoes) for (const g of gravacoes) await this.armazem.salvarGravacao(config.projeto, g);
     await this.salvarProjeto();
     this.gravacoes = await this.armazem.gravacoes(config.projeto);
-    this.acaoIdx = 0; this.parteIdx = 0; this.estado = 'parado'; this.reconhecedor = null;
-    this.ajustarAcaoAoModo();
+    this.estado = 'parado'; this.reconhecedor = null;
+    this.escolher(0);
     this.aoMudar();
   }
   private async salvarProjeto(): Promise<void> {
@@ -54,60 +59,118 @@ export class Estudio {
 
   get acoes(): Acao[] { return this.config ? todasAcoes(this.config).filter((a) => a.plataformas.includes(this.modo)) : []; }
   get acao(): Acao | null { return this.acoes[this.acaoIdx] ?? null; }
-  get parte() { return this.acao?.partes[this.parteIdx] ?? null; }
+  get gesto(): Gesto | null { return this.config && this.gestoId ? gestoPorId(this.config, this.gestoId) ?? null : null; }
   get repeticoes(): number { return this.config?.gravacao.repeticoes ?? 5; }
+  get preparacoes(): Gesto[] { return this.config?.gestos.filter((g) => g.tipo === 'preparacao') ?? []; }
 
-  tentativas(acao: string, parte: string, modo = this.modo): Gravacao[] {
-    return this.gravacoes.filter((g) => g.acao === acao && g.parte === parte && g.modo === modo).sort((a, b) => a.n - b.n);
+  tentativas(gesto: string, modo = this.modo): Gravacao[] {
+    return this.gravacoes.filter((g) => g.gesto === gesto && g.modo === modo).sort((a, b) => a.n - b.n);
   }
-  /** Quantas partes da ação estão completas (com todas as gravações). */
-  completas(a: Acao, modo = this.modo): number {
-    return a.partes.filter((p) => this.tentativas(a.id, p.id, modo).length >= this.repeticoes).length;
+  /** Quantos gestos da ação estão completos e quantos são. */
+  progressoDaAcao(a: Acao, modo = this.modo): { feitos: number; total: number } {
+    const gs = [...new Set(a.passos.flatMap((p) => p.alternativas.map((x) => x.gesto)))];
+    return { feitos: gs.filter((g) => this.tentativas(g, modo).length >= this.repeticoes).length, total: gs.length };
   }
 
   trocarModo(m: Modo): void {
-    if (this.estado === 'contagem' || this.estado === 'gravando') return;
-    this.modo = m; this.estado = 'parado'; this.reconhecedor = null; this.acaoIdx = 0; this.parteIdx = 0;
+    if (this.ocupado) return;
+    this.modo = m; this.estado = 'parado'; this.reconhecedor = null; this.escolher(0);
     this.aoMudar();
   }
-  private ajustarAcaoAoModo(): void { this.acaoIdx = Math.min(this.acaoIdx, Math.max(0, this.acoes.length - 1)); this.parteIdx = Math.min(this.parteIdx, Math.max(0, (this.acao?.partes.length ?? 1) - 1)); }
+  get ocupado(): boolean { return this.estado === 'contagem' || this.estado === 'gravando'; }
 
-  escolher(acaoIdx: number, parteIdx = 0): void {
-    if (this.estado === 'contagem' || this.estado === 'gravando') return;
-    const n = this.acoes.length; if (!n) return;
+  /** Escolhe a ação (e o primeiro gesto dela). */
+  escolher(acaoIdx: number): void {
+    if (this.ocupado) return;
+    const n = this.acoes.length; if (!n) { this.gestoId = null; return; }
     this.acaoIdx = ((acaoIdx % n) + n) % n;
-    const np = this.acao!.partes.length;
-    this.parteIdx = ((parteIdx % np) + np) % np;
+    this.gestoId = this.acao!.passos[0].alternativas[0].gesto;
     this.aviso = null; this.aoMudar();
   }
-  escolherPorId(acao: string, parte?: string): void {
+  escolherPorId(acao: string, gesto?: string): void {
     const i = this.acoes.findIndex((a) => a.id === acao); if (i < 0) return;
-    this.escolher(i, parte ? Math.max(0, this.acoes[i].partes.findIndex((p) => p.id === parte)) : 0);
+    this.escolher(i);
+    if (gesto) this.escolherGesto(gesto);
+  }
+  escolherGesto(gesto: string): void {
+    if (this.ocupado || !this.config || !gestoPorId(this.config, gesto)) return;
+    this.gestoId = gesto; this.aviso = null; this.aoMudar();
   }
 
   async salvarNotas(acao: string, n: Partial<NotasAcao>): Promise<void> {
-    this.notas[acao] = { ...{ observacoes: '', tolerancia: 1 }, ...(this.notas[acao] ?? {}), ...n };
+    this.notas[acao] = { ...{ observacoes: '' }, ...(this.notas[acao] ?? {}), ...n };
     await this.salvarProjeto();
-    if (this.estado === 'testando') this.prepararTeste();
   }
 
+  // ---------------- ajustes e biblioteca ----------------
+  /** Muda um ajuste do gesto (o que conta, espelhado, tempo, segurar, tolerância). Vale para todas as ações que o usam. */
+  async ajustar(gesto: string, a: Partial<AjustesGesto>): Promise<void> {
+    const g = this.config && gestoPorId(this.config, gesto); if (!g) return;
+    const lim = (v: number, [min, max]: readonly [number, number]) => Math.round(Math.min(max, Math.max(min, v)) * 100) / 100;
+    if (a.duracao !== undefined) a.duracao = lim(a.duracao, LIMITES.duracao);
+    if (a.segurar !== undefined) a.segurar = lim(a.segurar, LIMITES.segurar);
+    if (a.tolerancia !== undefined) a.tolerancia = lim(a.tolerancia, LIMITES.tolerancia);
+    g.ajustes = { ...g.ajustes, ...a }; g.editado = true;
+    await this.salvarProjeto();
+    if (this.estado === 'testando') this.prepararTeste();
+    this.aoMudar();
+  }
+
+  /** Cria uma preparação nova na biblioteca (com um nome) e devolve o id. */
+  async criarPreparacao(nome: string): Promise<string | null> {
+    if (!this.config) return null;
+    const base = 'prep_' + nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+    let id = idValido(base) ? base : 'prep_' + Date.now().toString(36); let i = 2;
+    while (gestoPorId(this.config, id)) id = `${base}_${i++}`.slice(0, 40);
+    const t: Texto = { pt: nome.slice(0, 60), en: nome.slice(0, 60) };
+    this.config.gestos.push({ id, nome: t, tipo: 'preparacao', sugestao: { pt: '', en: '' }, sugestao_pc: null, ajustes: { ...AJUSTES_PADRAO, conta: 'mao_dir', espelhado: true, duracao: 2, segurar: 0.3 } });
+    await this.salvarProjeto(); this.aoMudar();
+    return id;
+  }
+  /** Põe uma preparação da biblioteca na ação, antes do último passo (o de liberar). */
+  async adicionarPreparacao(acao: string, gesto: string): Promise<void> {
+    const a = this.config && todasAcoes(this.config).find((x) => x.id === acao), g = this.config && gestoPorId(this.config, gesto);
+    if (!a || !g || a.passos.length >= 6) return;
+    let pid = 'preparar', i = 2; while (a.passos.some((p) => p.id === pid)) pid = 'preparar_' + i++;
+    a.passos.splice(Math.max(0, a.passos.length - 1), 0, { id: pid, nome: g.nome, alternativas: [{ id: pid, nome: g.nome, gesto: g.id, efeito: null }] });
+    await this.salvarProjeto(); this.escolherGesto(gesto); this.aoMudar();
+  }
+  /** Tira um passo de preparação da ação (os outros passos não podem ser tirados). */
+  async removerPreparacao(acao: string, passo: string): Promise<void> {
+    const a = this.config && todasAcoes(this.config).find((x) => x.id === acao); if (!a) return;
+    const i = a.passos.findIndex((p) => p.id === passo);
+    const g = i >= 0 ? gestoPorId(this.config!, a.passos[i].alternativas[0].gesto) : null;
+    if (i < 0 || g?.tipo !== 'preparacao') return;
+    a.passos.splice(i, 1);
+    if (this.gestoId === g.id) this.gestoId = a.passos[0].alternativas[0].gesto;
+    await this.salvarProjeto(); this.aoMudar();
+  }
+  async renomearGesto(gesto: string, nome: string): Promise<void> {
+    const g = this.config && gestoPorId(this.config, gesto); if (!g || !nome.trim()) return;
+    g.nome = { pt: nome.slice(0, 60), en: nome.slice(0, 60) }; g.editado = true;
+    await this.salvarProjeto(); this.aoMudar();
+  }
+  /** Ações que usam o gesto (para avisar que regravar muda em todas). */
+  usosDoGesto(gesto: string): Acao[] { return this.config ? acoesDoGesto(this.config, gesto) : []; }
+
   // ---------------- gravar ----------------
-  /** Começa a contagem (3, 2, 1) e depois grava pela duração da parte. */
   gravar(agora: number): boolean {
-    const a = this.acao, p = this.parte;
-    if (!a || !p || this.estado === 'contagem' || this.estado === 'gravando') return false;
-    if (this.tentativas(a.id, p.id).length >= this.repeticoes) { this.aviso = { chave: 'cheio' }; this.aoMudar(); return false; }
-    this.estado = 'contagem'; this.quadros = []; this.eventos = [];
+    const g = this.gesto;
+    if (!g || this.ocupado || this.estado === 'testando') return false;
+    if (this.tentativas(g.id).length >= this.repeticoes) { this.aviso = { chave: 'cheio' }; this.aoMudar(); return false; }
+    this.estado = 'contagem'; this.quadros = []; this.eventos = []; this.gravandoGesto = g;
     this.fimContagem = agora + (this.config?.gravacao.contagem ?? 3);
-    this.fimGravacao = this.fimContagem + p.duracao;
+    this.fimGravacao = this.fimContagem + g.ajustes.duracao;
     this.falta = this.fimContagem - agora; this.aviso = null;
     this.aoMudar();
     return true;
   }
+  /** Para a contagem ou a gravação sem guardar. */
+  cancelar(): void { if (this.ocupado) { this.estado = 'parado'; this.aviso = { chave: 'cancelou' }; this.aoMudar(); } }
 
-  /** Um quadro do VR (também usado nos testes automáticos). `agora` em segundos. */
   quadroVR(a: Amostra, agora: number): EventoReconhecido[] {
     if (this.estado === 'testando') {
+      if (this.modo !== 'vr') return [];
       const ev = this.reconhecedor?.amostra(a, this.alturaTeste) ?? [];
       for (const e of ev) this.aoReconhecer(e);
       return ev;
@@ -120,7 +183,6 @@ export class Estudio {
     return [];
   }
 
-  /** Um evento do teclado ou do mouse (modo PC). */
   eventoPC(e: Omit<EventoPC, 't'>, agora: number): EventoReconhecido[] {
     if (this.estado === 'testando' && this.modo === 'pc') {
       const ev = this.reconhecedor?.evento({ ...e, t: agora }) ?? [];
@@ -132,7 +194,6 @@ export class Estudio {
     return [];
   }
 
-  /** Avança o relógio da contagem e da gravação (chamar a cada quadro). */
   tempo(agora: number): void {
     if (this.estado === 'contagem') {
       this.falta = this.fimContagem - agora;
@@ -144,11 +205,11 @@ export class Estudio {
   }
 
   private async terminarGravacao(): Promise<void> {
-    const a = this.acao!, p = this.parte!, cfg = this.config!;
+    const ge = this.gravandoGesto!, cfg = this.config!;
     this.estado = 'parado';
-    const usados = new Set(this.tentativas(a.id, p.id).map((g) => g.n));
+    const usados = new Set(this.tentativas(ge.id).map((g) => g.n));
     let n = 1; while (usados.has(n)) n++;
-    const g: Gravacao = { versao_formato: 1, modo: this.modo, acao: a.id, parte: p.id, n, data: new Date().toISOString(), duracao: p.duracao };
+    const g: Gravacao = { versao_formato: 2, modo: this.modo, gesto: ge.id, n, data: new Date().toISOString(), duracao: ge.ajustes.duracao };
     if (this.modo === 'vr') {
       if (this.quadros.length < 3) { this.aviso = { chave: 'semDados' }; this.aoMudar(); return; }
       g.quadros = this.quadros; g.altura_olhos = alturaDosOlhos(this.quadros);
@@ -159,39 +220,55 @@ export class Estudio {
     }
     this.gravacoes.push(g);
     await this.armazem.salvarGravacao(cfg.projeto, g);
-    this.aviso = { chave: 'gravou', valor: `${this.tentativas(a.id, p.id).length}/${this.repeticoes}` };
+    this.aviso = { chave: 'gravou', valor: `${this.tentativas(ge.id).length}/${this.repeticoes}` };
     this.ultimaGravada = g;
     this.aoMudar();
   }
-  /** A gravação que acabou de ser feita (o boneco repete na hora). */
-  ultimaGravada: Gravacao | null = null;
 
-  async apagar(g: Pick<Gravacao, 'modo' | 'acao' | 'parte' | 'n'>): Promise<void> {
+  async apagar(g: Pick<Gravacao, 'modo' | 'gesto' | 'n'>): Promise<void> {
     if (!this.config) return;
     await this.armazem.apagarGravacao(this.config.projeto, g);
-    this.gravacoes = this.gravacoes.filter((x) => !(x.modo === g.modo && x.acao === g.acao && x.parte === g.parte && x.n === g.n));
+    this.gravacoes = this.gravacoes.filter((x) => !(x.modo === g.modo && x.gesto === g.gesto && x.n === g.n));
     this.aviso = { chave: 'apagou' };
     this.aoMudar();
   }
-  /** Apaga a última tentativa da parte escolhida (botão B no VR). */
   async apagarUltima(): Promise<void> {
-    const a = this.acao, p = this.parte; if (!a || !p) return;
-    const ts = this.tentativas(a.id, p.id); const g = ts[ts.length - 1];
-    if (g) await this.apagar(g);
+    const g = this.gesto; if (!g) return;
+    const ts = this.tentativas(g.id); const u = ts[ts.length - 1];
+    if (u) await this.apagar(u);
   }
 
   // ---------------- testar ----------------
   private alturaTeste = 1.6;
   alternarTeste(alturaOlhos = 1.6): void {
-    if (this.estado === 'contagem' || this.estado === 'gravando') return;
+    if (this.ocupado) return;
     if (this.estado === 'testando') { this.estado = 'parado'; this.reconhecedor = null; }
     else { this.alturaTeste = alturaOlhos; this.prepararTeste(); this.estado = 'testando'; }
     this.aoMudar();
   }
   private prepararTeste(): void {
-    if (!this.config) return;
-    const ajustes: Record<string, { tolerancia: number }> = {};
-    for (const [k, v] of Object.entries(this.notas)) ajustes[k] = { tolerancia: v.tolerancia };
-    this.reconhecedor = new Reconhecedor(this.config, this.modo, this.gravacoes, ajustes);
+    if (this.config) this.reconhecedor = new Reconhecedor(this.config, this.modo, this.gravacoes);
   }
+}
+
+/** Uma configuração nova do mesmo projeto, com o que foi feito no Estúdio: preparações criadas, ajustes dos gestos
+ *  e preparações postas nas ações continuam. */
+function juntarEdicoes(nova: Configuracao, antiga: Configuracao): Configuracao {
+  const r = structuredClone(nova);
+  for (const g of antiga.gestos) {
+    const x = gestoPorId(r, g.id);
+    if (x) { if (g.editado) { x.ajustes = { ...g.ajustes }; x.nome = g.nome; x.editado = true; } } // só o que foi mudado no Estúdio
+    else if (g.tipo === 'preparacao') r.gestos.push(structuredClone(g));
+  }
+  for (const a of todasAcoes(antiga)) {
+    const x = todasAcoes(r).find((y) => y.id === a.id); if (!x) continue;
+    a.passos.forEach((p, i) => {
+      const g = gestoPorId(antiga, p.alternativas[0].gesto);
+      if (g?.tipo !== 'preparacao' || x.passos.some((q) => q.alternativas.some((z) => z.gesto === g.id))) return;
+      x.passos.splice(Math.min(i, x.passos.length - 1), 0, structuredClone(p));
+    });
+    // passos de preparação que a configuração nova tem e que foram tirados no Estúdio continuam fora
+    x.passos = x.passos.filter((p) => { const g = gestoPorId(r, p.alternativas[0].gesto); return g?.tipo !== 'preparacao' || a.passos.some((q) => q.id === p.id) || !antiga.gestos.some((z) => z.id === g.id); });
+  }
+  return r;
 }

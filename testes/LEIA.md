@@ -11,4 +11,4 @@ python3 testes/rodar_todos.py
 
 | Arquivo | O que confere |
 |---|---|
-| `teste_estudio.py` | abrir o exemplo; arquivos de ações ruins recusados; gravar 5 vezes cada parte no VR e recusar a sexta; achar o trecho com movimento; reconhecer cada gesto feito por outra pessoa e com a outra mão; engatilhar e liberar (e expirar); movimentos à toa não disparam; exportar e importar o zip; guardar no navegador; gravar e reconhecer teclado e mouse; o Quest simulado (A grava, Y testa); fotos do boneco |
+| `teste_estudio.py` | exemplo; arquivos ruins; versão 1 convertida; gravar 5 vezes cada gesto; reconhecer outra pessoa e com a outra mão; engatilhar e liberar; movimentos à toa não disparam; carga por ciclos (mínimo, máximo, níveis), preparação que precisa segurar a pose, soco curto que não vale, liberações alternativas, gravado com a direita e testado com a esquerda; biblioteca de preparações e ajustes guardados; exportar e importar; guardar no navegador; teclado e mouse; menu do Quest (analógico, A, B, segurar Y); palma muda de cor com A; dedos no lugar; direção dos poderes |

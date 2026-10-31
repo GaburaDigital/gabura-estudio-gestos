@@ -8,10 +8,12 @@
 
 import type { Modo } from './config';
 
-export const VERSAO_GRAVACAO = 1;
+export const VERSAO_GRAVACAO = 2;
 
-/** Botões do Quest guardados num número (um bit cada). */
+/** Botões do Quest guardados num número (um bit cada). B e Y ficam para o menu (C35): nunca entram num gesto. */
 export const BOTOES = ['A', 'B', 'X', 'Y', 'analogicoE', 'analogicoD'] as const;
+export const BOTOES_DO_GESTO = ['A', 'X', 'analogicoE', 'analogicoD'] as const;
+export const BIT_A = 1, BIT_X = 4;
 export type Botao = typeof BOTOES[number];
 
 export interface V3 { x: number; y: number; z: number }
@@ -29,10 +31,10 @@ export type TipoEventoPC = 'baixo' | 'cima' | 'roda' | 'mover';
 export interface EventoPC { t: number; tipo: TipoEventoPC; codigo: string; dx?: number; dy?: number }
 
 export interface Gravacao {
-  versao_formato: 1;
+  versao_formato: 2;
   modo: Modo;
-  acao: string;
-  parte: string;
+  /** Gesto da biblioteca (versão 2). Gravações da versão 1 tinham ação e parte: viram o gesto `<acao>_<parte>`. */
+  gesto: string;
   /** Número da tentativa (1, 2, 3…). */
   n: number;
   data: string;
@@ -102,8 +104,18 @@ export function alturaDosOlhos(quadros: Quadro[]): number {
   return h > 0.5 ? r3(h) : 1.6;
 }
 
-/** Bits dos botões a partir de uma lista de nomes. */
+/** Bits dos botões a partir de uma lista de nomes (só os que podem fazer parte de um gesto). */
 export function bitsDosBotoes(nomes: Iterable<string>): number {
-  let b = 0; for (const n of nomes) { const i = (BOTOES as readonly string[]).indexOf(n); if (i >= 0) b |= 1 << i; }
+  let b = 0; for (const n of nomes) { if (!(BOTOES_DO_GESTO as readonly string[]).includes(n)) continue; const i = (BOTOES as readonly string[]).indexOf(n); if (i >= 0) b |= 1 << i; }
   return b;
+}
+
+/** Gravação de uma versão antiga (acao + parte) para a versão 2 (gesto). */
+export function migrarGravacao(g: Record<string, unknown>): Gravacao | null {
+  if (g.versao_formato === 2 && typeof g.gesto === 'string') return g as unknown as Gravacao;
+  if (g.versao_formato === 1 && typeof g.acao === 'string' && typeof g.parte === 'string') {
+    const c = { ...g, versao_formato: 2, gesto: `${g.acao}_${g.parte}`.slice(0, 40) } as Record<string, unknown>;
+    delete c.acao; delete c.parte; return c as unknown as Gravacao;
+  }
+  return null;
 }

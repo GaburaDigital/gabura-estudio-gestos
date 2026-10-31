@@ -29,7 +29,7 @@ export function poseDaAmostra(a: Amostra, ref: Referencia, escala: number, espel
     if (espelho) { r.y = -r.y; r.z = -r.z; } // reflexo no plano x = 0
     return r;
   };
-  const mao = (m: Amostra['esq']) => ({ p: pos(m.p), q: rot(m.q), gatilho: m.gatilho, grip: m.grip });
-  const e = mao(a.esq), d = mao(a.dir);
+  const mao = (m: Amostra['esq'], botao: boolean) => ({ p: pos(m.p), q: rot(m.q), gatilho: m.gatilho, grip: m.grip, botao });
+  const e = mao(a.esq, (a.botoes & 4) !== 0), d = mao(a.dir, (a.botoes & 1) !== 0); // X na esquerda, A na direita
   return { cabeca: { p: pos(a.cabeca.p), q: rot(a.cabeca.q) }, maos: espelho ? { esq: d, dir: e } : { esq: e, dir: d } };
 }
